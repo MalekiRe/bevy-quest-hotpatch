@@ -33,6 +33,10 @@ struct Cli {
     #[arg(long, global = true, default_value = "../app")]
     app_dir: PathBuf,
 
+    /// Rust `[lib]` name of the app crate (must match the built cdylib name)
+    #[arg(long = "crate", global = true, default_value = "quest_hotpatch_app")]
+    crate_name: String,
+
     /// Devserver port (must match what the app dials: 127.0.0.1:8080 on Android)
     #[arg(long, global = true, default_value_t = 8080)]
     port: u16,
@@ -161,7 +165,10 @@ async fn serve_loop(cli: &Cli) -> Result<()> {
     // If we have a prior capture, load the patch engine; otherwise the loop
     // starts in full-rebuild-only mode until a `build` has been run.
     let scratch = engine::scratch_dir(&app);
-    let original = app.join("target/aarch64-linux-android/debug/libquest_hotpatch_app.so");
+    let original = app.join(format!(
+        "target/aarch64-linux-android/debug/lib{}.so",
+        cli.crate_name
+    ));
     let ndk = std::env::var("ANDROID_NDK_HOME").unwrap_or_else(|_| {
         std::env::var("ANDROID_HOME")
             .map(|h| format!("{h}/ndk/30.0.14904198"))
@@ -170,7 +177,8 @@ async fn serve_loop(cli: &Cli) -> Result<()> {
     let real_linker = format!(
         "{ndk}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
     );
-    let session = engine::PatchSession::load(&app, &original, std::path::Path::new(&real_linker)).ok();
+    let session =
+        engine::PatchSession::load(&app, &cli.crate_name, &original, std::path::Path::new(&real_linker)).ok();
     if let Some(s) = &session {
         tracing::info!(ready = s.is_ready(), "patch engine loaded");
     } else {

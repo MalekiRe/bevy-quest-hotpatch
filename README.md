@@ -87,3 +87,30 @@ DEVICE=192.168.1.151:5555 ./host/target/debug/quest-hotpatch-host serve
 
 - `questdev` — bash helper: `build | install | run | logs | stop`.
 - `host/quest-hotpatch-host` subcommands: `build [--deploy]`, `install`, `serve`.
+
+## Quest / OpenXR sample (bevy_oxr android example + hotpatching)
+
+`oxr-app/` is the official **bevy_oxr** android example (`bevy_mod_openxr 0.6.x`,
+Bevy **0.19**) with the hot-patching integration baked in:
+
+- the OpenXR loader (`libopenxr_loader.so`, OpenXR 1.1.38) is fetched by
+  `build.rs` and bundled via `runtime_libs` (cached in this repo);
+- Quest manifest: VR headtracking + hand tracking + passthrough features,
+  `HAND_TRACKING` + `INTERNET` permissions, `com.oculus.intent.category.VR` /
+  `IMMERSIVE_HMD` launcher;
+- passthrough + hand-tracked scene from the upstream example, plus a cube whose
+  color is hot-patchable (`desired_color()`, BLUE baseline -> patch to RED).
+
+Build + patch it exactly like the phone app, just pointing at the oxr crate:
+
+```sh
+# build/install (Quest over wireless adb): produces questoxr.apk
+DEVICE=192.168.1.151:5555 ./host/target/debug/quest-hotpatch-host \
+    --app-dir ../oxr-app --crate quest_oxr_app build --deploy
+
+# run the dev loop (start BEFORE launching the app on the headset)
+DEVICE=192.168.1.151:5555 ./host/target/debug/quest-hotpatch-host \
+    --app-dir ../oxr-app --crate quest_oxr_app serve
+
+# edit oxr-app/src/lib.rs  (desired_color: BLUE -> RED) and save.
+```

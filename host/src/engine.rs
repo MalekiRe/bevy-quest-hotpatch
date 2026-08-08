@@ -14,15 +14,13 @@ use whisker_dev_server::hotpatch::{
     parse_symbol_table, run_link_plan, run_obj_plan,
 };
 
-/// The tip crate that owns the hot-patchable code (must match `[lib] name`).
-pub const PACKAGE: &str = "quest_hotpatch_app";
-
 /// Where the engine keeps its scratch artifacts.
 pub fn scratch_dir(workspace_root: &Path) -> PathBuf {
     workspace_root.join("target/.questhotpatch")
 }
 
 pub struct PatchSession {
+    pub crate_name: String,
     pub workspace_root: PathBuf,
     pub original_binary: PathBuf,
     pub real_linker: PathBuf,
@@ -35,7 +33,7 @@ pub struct PatchSession {
 impl PatchSession {
     /// Load state produced by the fat build (`build` subcommand / `capture_fat_build`):
     /// captured rustc+linker invocations + the original APK `.so` as the baseline.
-    pub fn load(workspace_root: &Path, original_binary: &Path, real_linker: &Path) -> Result<Self> {
+    pub fn load(workspace_root: &Path, crate_name: &str, original_binary: &Path, real_linker: &Path) -> Result<Self> {
         let scratch = scratch_dir(workspace_root);
         let captured_rustc = load_captured_args(&scratch.join("rustc"), Some("aarch64-linux-android"))
             .context("load captured rustc args")?;
@@ -44,6 +42,7 @@ impl PatchSession {
         let cache = HotpatchModuleCache::from_path(original_binary)
             .with_context(|| format!("parse original binary {}", original_binary.display()))?;
         Ok(Self {
+            crate_name: crate_name.to_string(),
             workspace_root: workspace_root.to_path_buf(),
             original_binary: original_binary.to_path_buf(),
             real_linker: real_linker.to_path_buf(),
@@ -56,7 +55,7 @@ impl PatchSession {
 
     pub fn is_ready(&self) -> bool {
         self.cache.aslr_reference != 0
-            && self.captured_rustc.contains_key(PACKAGE)
+            && self.captured_rustc.contains_key(&self.crate_name)
             && !self.captured_linker.is_empty()
     }
 
@@ -74,8 +73,8 @@ impl PatchSession {
         // 1. Rebuild ONLY the tip crate as an object file (thin rebuild).
         let captured_rustc = self
             .captured_rustc
-            .get(PACKAGE)
-            .context("no captured rustc invocation for the tip crate")?;
+            .get(&self.crate_name)
+            .with_context(|| format!("no captured rustc invocation for tip crate {}", self.crate_name))?;
         let obj_plan = build_obj_plan(captured_rustc, &objects);
         let object_path = run_obj_plan(&obj_plan, &self.rustc_path, &self.workspace_root).await?;
 

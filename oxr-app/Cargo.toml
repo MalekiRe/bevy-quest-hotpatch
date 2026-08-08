@@ -1,0 +1,79 @@
+[package]
+name = "quest_oxr_app"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "Bevy 0.19 + OpenXR (Quest) sample from bevy_oxr's android example, wired for subsecond hot-patching via cargo-apk"
+
+[lib]
+name = "quest_oxr_app"
+crate-type = ["rlib", "cdylib"]
+
+[dependencies]
+# cargo-apk requires android-native-activity (NOT game-activity); hotpatching wires HotPatchPlugin.
+bevy = { version = "0.19", features = ["android-native-activity", "hotpatching"] }
+# the bevy-0.19 line of BevyXR (published 0.6.x)
+bevy_mod_openxr = { version = "0.6", features = ["window_support", "fb_passthrough"] }
+bevy_xr_utils = "0.6"
+bevy_mod_xr = "0.6"
+
+[build-dependencies]
+# used to fetch the OpenXR loader for Android (bundled via runtime_libs)
+reqwest = { version = "0.12", features = ["blocking"] }
+zip = "2.1"
+
+# ---- cargo-apk metadata (from bevy_oxr's examples/android, + INTERNET for the hotpatch devserver) ----
+[package.metadata.android]
+package = "dev.malek.questoxr"
+apk_name = "questoxr"
+build_targets = ["aarch64-linux-android"]
+runtime_libs = "runtime_libs"
+strip = "strip"
+
+[[package.metadata.android.uses_permission]]
+name = "android.permission.INTERNET"
+
+[package.metadata.android.sdk]
+min_sdk_version = 26
+target_sdk_version = 32
+
+[package.metadata.android.application.activity]
+theme = "@android:style/Theme.Black.NoTitleBar.Fullscreen"
+config_changes = "density|keyboard|keyboardHidden|navigation|orientation|screenLayout|screenSize|uiMode"
+launch_mode = "singleTask"
+orientation = "landscape"
+resizeable_activity = false
+
+[[package.metadata.android.uses_feature]]
+name = "android.hardware.vr.headtracking"
+required = true
+
+[[package.metadata.android.uses_feature]]
+name = "oculus.software.handtracking"
+required = true
+
+[[package.metadata.android.uses_feature]]
+name = "com.oculus.feature.PASSTHROUGH"
+required = true
+
+[[package.metadata.android.uses_feature]]
+name = "com.oculus.experimental.enabled"
+required = true
+
+[[package.metadata.android.uses_permission]]
+name = "com.oculus.permission.HAND_TRACKING"
+
+[[package.metadata.android.application.activity.intent_filter]]
+actions = ["android.intent.action.MAIN"]
+categories = [
+    "com.oculus.intent.category.VR",
+    "android.intent.category.LAUNCHER",
+    "org.khronos.openxr.intent.category.IMMERSIVE_HMD",
+]
+
+# ---- dev profile: deps optimized, tip crate debug (subsecond needs debug_assertions) ----
+[profile.dev]
+opt-level = 0
+
+[profile.dev.package."*"]
+opt-level = 3
