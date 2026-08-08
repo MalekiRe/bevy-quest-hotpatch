@@ -1,8 +1,12 @@
 [package]
-name = "quest-hotpatch-host"
+name = "cargo-quest-hotpatch"
 version = "0.1.0"
 edition = "2021"
 publish = false
+
+[[bin]]
+name = "cargo-quest-hotpatch"
+path = "src/main.rs"
 
 [[bin]]
 name = "quest-hotpatch-host"

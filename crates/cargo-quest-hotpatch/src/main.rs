@@ -30,12 +30,12 @@ struct Cli {
     device: Option<String>,
 
     /// Path to the app crate (has Cargo.toml with [package.metadata.android])
-    #[arg(long, global = true, default_value = "../app")]
+    #[arg(long, global = true, default_value = ".")]
     app_dir: PathBuf,
 
-    /// Rust `[lib]` name of the app crate (must match the built cdylib name)
-    #[arg(long = "crate", global = true, default_value = "quest_hotpatch_app")]
-    crate_name: String,
+    /// Rust `[lib]` name of the app crate (auto-detected from Cargo.toml when omitted)
+    #[arg(long = "crate", global = true)]
+    crate_name: Option<String>,
 
     /// Devserver port (must match what the app dials: 127.0.0.1:8080 on Android)
     #[arg(long, global = true, default_value_t = 8080)]
@@ -62,6 +62,34 @@ enum Cmd {
     Install,
     /// The dev loop: devserver + watcher + adb reverse (+ full-rebuild fallback)
     Serve,
+}
+
+/// Read `[lib] name` from the app crate's Cargo.toml (fallback: package name).
+fn detect_lib_name(app_dir: &std::path::Path) -> Result<String> {
+    let cargo_toml = app_dir.join("Cargo.toml");
+    let text = std::fs::read_to_string(&cargo_toml)
+        .with_context(|| format!("read {}", cargo_toml.display()))?;
+    let mut in_lib = false;
+    let mut fallback = None;
+    for line in text.lines() {
+        let line = line.trim();
+        if line.starts_with('[') {
+            in_lib = line == "[lib]";
+            if !in_lib && line.starts_with("[package]") {
+                for l in text.lines() {
+                    if let Some(v) = l.trim().strip_prefix("name = ") {
+                        fallback = Some(v.trim_matches('"').to_string());
+                        break;
+                    }
+                }
+            }
+            continue;
+        }
+        if in_lib && let Some(v) = line.strip_prefix("name = ") {
+            return Ok(v.trim_matches('"').to_string());
+        }
+    }
+    fallback.ok_or_else(|| anyhow::anyhow!("no [lib] name in {cargo_toml:?}"))
 }
 
 fn app_dir(cli: &Cli) -> PathBuf {
@@ -142,7 +170,11 @@ async fn main() -> anyhow::Result<()> {
         )
         .init();
 
-    let cli = Cli::parse();
+    let mut cli = Cli::parse();
+    if cli.crate_name.is_none() {
+        cli.crate_name = Some(detect_lib_name(&cli.app_dir)?);
+        tracing::info!("detected app crate: {}", cli.crate_name.as_deref().unwrap());
+    }
     match &cli.cmd {
         Cmd::Build { deploy: deploy_flag } => {
             capture_fat_build(&cli)?;
@@ -167,7 +199,7 @@ async fn serve_loop(cli: &Cli) -> Result<()> {
     let scratch = engine::scratch_dir(&app);
     let original = app.join(format!(
         "target/aarch64-linux-android/debug/lib{}.so",
-        cli.crate_name
+        cli.crate_name.as_deref().unwrap_or("quest_hotpatch_app")
     ));
     let ndk = std::env::var("ANDROID_NDK_HOME").unwrap_or_else(|_| {
         std::env::var("ANDROID_HOME")
@@ -178,7 +210,7 @@ async fn serve_loop(cli: &Cli) -> Result<()> {
         "{ndk}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
     );
     let session =
-        engine::PatchSession::load(&app, &cli.crate_name, &original, std::path::Path::new(&real_linker)).ok();
+        engine::PatchSession::load(&app, cli.crate_name.as_deref().unwrap_or("quest_hotpatch_app"), &original, std::path::Path::new(&real_linker)).ok();
     if let Some(s) = &session {
         tracing::info!(ready = s.is_ready(), "patch engine loaded");
     } else {

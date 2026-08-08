@@ -144,7 +144,7 @@ impl PatchSession {
         // render/compute threads) makes the app execute wrong code and crash.
         // The demo's hot boundary is `desired_color`; every other entry falls
         // back to the deployed (old) code, which stays correct.
-        const HOT_FUNCS: &[&str] = &["desired_color"];
+        const HOT_FUNCS: &[&str] = &["desired_color", "paint_cube"];
         let old_name_of: std::collections::HashMap<u64, &str> = self
             .cache
             .symbols

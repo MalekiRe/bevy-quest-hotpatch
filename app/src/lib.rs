@@ -103,7 +103,7 @@ fn paint_cube(
         let f: fn() -> Color = desired_color; // size-8 fn pointer -> call_as_ptr path
         let color = bevy::app::hotpatch::call(f);
         if let Some(mut m) = materials.get_mut(h.id()) {
-            m.base_color = color;
+            m.base_color = Color::srgb(0.0, 1.0, 0.0); // SYSTEM-BODY EDIT -> GREEN (desired_color untouched)
         }
     }
 }
