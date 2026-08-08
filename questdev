@@ -1,0 +1,69 @@
+#!/usr/bin/env bash
+# questdev — interim dev loop for the quest-hotpatch app (cargo-apk flow).
+#
+#   questdev build   # cargo apk build
+#   questdev install # adb install -r (uses $DEVICE or the first connected device)
+#   questdev run     # build + install + launch + follow logs
+#   questdev logs    # follow logcat for the app package
+#   questdev stop    # force-stop the app on the device
+#
+# Env:
+#   DEVICE      adb serial (e.g. 192.168.1.151:5555); default = first connected
+#   APK         path to the apk; default = target/debug/apk/questhotpatch.apk
+#   PACKAGE     default dev.malek.questhotpatch
+#   ACTIVITY    default android.app.NativeActivity
+set -euo pipefail
+
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+APK="${APK:-$HERE/app/target/debug/apk/questhotpatch.apk}"
+PACKAGE="${PACKAGE:-dev.malek.questhotpatch}"
+ACTIVITY="${ACTIVITY:-android.app.NativeActivity}"
+
+device() {
+  if [[ -n "${DEVICE:-}" ]]; then
+    echo "$DEVICE"
+  else
+    adb devices | awk 'NR>1 && $2=="device" {print $1; exit}'
+  fi
+}
+
+cmd="${1:-run}"
+
+if [[ "$cmd" == "-h" || "$cmd" == "--help" || "$cmd" == "help" ]]; then
+  sed -n '1,13p' "$0" | sed 's/^# //; s/^#$//'
+  exit 0
+fi
+
+D="$(device)"
+[[ -z "$D" ]] && { echo "no device found (set DEVICE=ip:port if needed)" >&2; exit 1; }
+echo "device: $D"
+
+case "$cmd" in
+  build)
+    (cd "$HERE/app" && cargo apk build)
+    ;;
+  install)
+    [[ -f "$APK" ]] || { echo "missing $APK — run 'questdev build' first" >&2; exit 1; }
+    adb -s "$D" install -r -t "$APK"
+    ;;
+  stop)
+    adb -s "$D" shell am force-stop "$PACKAGE" || true
+    ;;
+  logs)
+    adb -s "$D" logcat --pid="$(adb -s "$D" shell pidof "$PACKAGE" | tr -d '\r')" | tee "$HERE/questdev.log"
+    ;;
+  run)
+    "$0" build
+    "$0" install
+    "$0" stop
+    adb -s "$D" shell am start -n "$PACKAGE/$ACTIVITY"
+    echo "--- logs (Ctrl-C to stop following) ---"
+    adb -s "$D" logcat -c || true
+    sleep 2
+    adb -s "$D" logcat --pid="$(adb -s "$D" shell pidof "$PACKAGE" | tr -d '\r')" -v time | grep --line-buffered -vE "^$" | tee "$HERE/questdev.log"
+    ;;
+  *)
+    echo "usage: questdev [build|install|run|logs|stop]" >&2
+    exit 1
+    ;;
+esac

@@ -1,0 +1,15 @@
+# Build output (giant: multi-GB .so files / APKs)
+**/target/
+**/apk/
+**/deployment/
+
+# Session logs / diagnostics (some are 100MB+)
+*.log
+build*.log
+
+# Big raw screenshots (keep only the PNG evidence)
+screens/
+*.raw
+
+# Misc scratch
+questdev.log

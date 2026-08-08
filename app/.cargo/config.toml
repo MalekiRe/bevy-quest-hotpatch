@@ -1,0 +1,6 @@
+# hotpatching: export all symbols so subsecond patch .so's can resolve them via dlopen
+[target.aarch64-linux-android]
+rustflags = ["-C", "link-arg=-Wl,--export-dynamic"]
+
+# speed up patch rebuilds on android a bit (thin). Optional.
+[profile.dev.package."*"]
