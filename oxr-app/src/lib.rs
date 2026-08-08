@@ -107,7 +107,7 @@ fn setup(
 // =========================================================================
 /// HOT: change the returned color and the running app updates it live.
 fn desired_color() -> Color {
-    Color::srgb(0.0, 0.0, 1.0) // <<< BLUE baseline. Patch me to RED.
+    Color::srgb(1.0, 0.0, 0.0) // <<< RED after hot-patch!
 }
 
 fn paint_cube(

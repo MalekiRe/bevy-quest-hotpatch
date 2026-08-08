@@ -1,4 +1,4 @@
-# quest-hotpatch
+# bevy-quest-hotpatch
 
 > ⚠️ **AI-GENERATED DISCLOSURE**: This repository — its code, tooling, and this
 > documentation — was built **interactively by an AI agent running
@@ -9,7 +9,7 @@
 
 ---
 
-**Live [Subsecond](https://github.com/DioxusLabs/dioxus/tree/main/packages/subsecond)
+**bevy-quest-hotpatch** — live [Subsecond](https://github.com/DioxusLabs/dioxus/tree/main/packages/subsecond)
 hot-patching of Bevy apps on Android / Quest, built with `cargo apk`.**
 
 Edit a Rust function body, save, and the **running** app patched the new code
