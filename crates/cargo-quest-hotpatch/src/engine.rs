@@ -16,6 +16,23 @@ use whisker_dev_server::hotpatch::{
 
 /// Where the engine keeps its scratch artifacts.
 pub fn scratch_dir(workspace_root: &Path) -> PathBuf {
+    // Workspace-aware: the app may live inside a cargo workspace whose target
+    // root is the workspace root, not <app>/target.
+    let mut d = workspace_root.to_path_buf();
+    loop {
+        let cargo = d.join("Cargo.toml");
+        if cargo.exists() {
+            let txt = std::fs::read_to_string(&cargo).unwrap_or_default();
+            if txt.contains("[workspace]") {
+                return d.join("target/.questhotpatch");
+            }
+        }
+        if let Some(parent) = d.parent() {
+            d = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
     workspace_root.join("target/.questhotpatch")
 }
 

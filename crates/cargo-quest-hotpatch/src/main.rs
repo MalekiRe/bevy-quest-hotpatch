@@ -102,6 +102,13 @@ fn detect_lib_name(app_dir: &std::path::Path) -> Result<String> {
     fallback.ok_or_else(|| anyhow::anyhow!("no [lib] name in {cargo_toml:?}"))
 }
 
+/// Workspace-aware scratch dir: the shims write captures relative to the app
+/// path, but builds land in the workspace target root — so scratch must use
+/// the workspace root, else the engine reads a stale dir.
+fn scratch_root(app: &std::path::Path) -> PathBuf {
+    ws_target_root(app).join(".questhotpatch")
+}
+
 /// Workspace-aware target root: for a crate inside a cargo workspace, cargo
 /// builds into <workspace-root>/target. Falls back to <app>/target.
 fn ws_target_root(app: &std::path::Path) -> PathBuf {
@@ -223,6 +230,30 @@ fn capture_fat_build(cli: &Cli) -> Result<()> {
         .status()
         .context("spawn `cargo apk build`")?;
     anyhow::ensure!(status.success(), "cargo apk build failed");
+
+    // Promote the app crate's cdylib link invocation to a canonical
+    // `fat_link.json` (dx run_fat_link parity): the patch build replays these
+    // exact args with the tip crate's fresh objects, so dep addresses match
+    // the deployed binary and the jump table needs no name filter.
+    let scratch = engine::scratch_dir(&app);
+    let mut best: Option<(std::time::SystemTime, serde_json::Value)> = None;
+    for entry in std::fs::read_dir(&linker_cache)? {
+        let path = entry?.path();
+        let Ok(rec) = serde_json::from_str::<serde_json::Value>(&std::fs::read_to_string(&path)?) else { continue };
+        let Some(out) = rec.get("output").and_then(|o| o.as_str()) else { continue };
+        if !out.contains("libquest_hotpatch_app.so")
+            && !out.contains(&format!("lib{}.so", detect_lib_name(&app).unwrap_or_default()))
+        { continue; }
+        let mt = std::fs::metadata(&path)?.modified().unwrap_or(std::time::UNIX_EPOCH);
+        if best.as_ref().map(|(t, _)| mt > *t).unwrap_or(true) {
+            best = Some((mt, rec));
+        }
+    }
+    if let Some((_, rec)) = best {
+        std::fs::create_dir_all(&scratch)?;
+        std::fs::write(scratch.join("fat_link.json"), serde_json::to_vec(&rec)?)?;
+        tracing::info!("canonical fat_link.json written");
+    }
     Ok(())
 }
 
