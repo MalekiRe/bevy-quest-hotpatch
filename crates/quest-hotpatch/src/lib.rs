@@ -9,8 +9,6 @@ use bevy_ecs::prelude::*;
 pub use dioxus_devtools;
 #[cfg(debug_assertions)]
 use dioxus_devtools::{subsecond::apply_patch, *};
-pub use quest_hotpatch_macros::*;
-
 pub mod hot_patched_app;
 
 /// Everything you need to use hotpatching
@@ -19,7 +17,6 @@ pub mod prelude {
         HotPatched, SimpleSubsecondPlugin,
         hot_patched_app::{HotPatchedAppExt as _, StartupRerunHotPatch},
     };
-    pub use quest_hotpatch_macros::*;
 }
 
 /// The plugin you need to add to your app:
@@ -93,7 +90,6 @@ pub struct HotPatched;
 #[derive(SystemSet, Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SimpleSubsecondSystemSet {
     /// Update the pointers to the current function definitions.
-    /// Systems with `#[hot(rerun_on_hot_patch = true)]` will be rerun here.
     UpdateFunctionPtrs,
 }
 

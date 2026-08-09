@@ -5303,17 +5303,7 @@ dependencies = [
  "bevy_platform",
  "crossbeam-channel",
  "dioxus-devtools",
- "quest-hotpatch-macros",
  "send_wrapper",
-]
-
-[[package]]
-name = "quest-hotpatch-macros"
-version = "0.1.0"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 2.0.119",
 ]
 
 [[package]]

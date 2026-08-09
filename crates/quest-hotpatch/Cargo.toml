@@ -17,7 +17,6 @@ bevy_platform = { version = "0.19", default-features = false }
 bevy_ecs_macros = { version = "0.19", default-features = false }
 bevy_internal = { version = "0.19", features = ["track_location"] }
 dioxus-devtools = "0.7.10"
-quest-hotpatch-macros = { path = "../quest-hotpatch-macros", version = "0.1.0" }
 crossbeam-channel = "0.5.15"
 send_wrapper = "0.6.0"
 

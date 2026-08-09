@@ -34,8 +34,7 @@ bevy-quest-hotpatch/                 # cargo workspace
 │   │       ├── engine.rs            # thin tip-crate rebuild, stub gen, jump-table build
 │   │       ├── server.rs            # dioxus-protocol dev-server (ws://…/_dioxus) + adb reverse
 │   │       └── bin/                 # rustc/linker capture shims
-│   ├── quest-hotpatch/              # recreated `with_hot_patch` + `#[hot]` API
-│   └── quest-hotpatch-macros/       # the `#[hot]` attribute macro
+│   └── quest-hotpatch/              # recreated `with_hot_patch` hot-patching API
 ├── app/                             # phone demo (cargo-apk, bevy 0.19)
 └── oxr-app/                         # Quest 3 OpenXR demo (bevy_oxr)
 ```
@@ -134,9 +133,6 @@ App::new()
     })
     .run();
 ```
-
-`#[hot(...)]` is available for the opt-in cases (`hot_patch_signature`, `rerun_on_hot_patch`) and for
-wrapping arbitrary functions in `HotFn`.
 
 ---
 
