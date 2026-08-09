@@ -21,9 +21,11 @@ fn run_app() {
         .add_plugins(SimpleSubsecondPlugin::default())
         .add_systems(Startup, setup)
         .with_hot_patch(|app| {
-            app.add_systems(Update, paint_cube);
+            // THREE schedules at once: Update, FixedUpdate, Last — all hot.
+            app.add_systems(Update, (rotate, alive_tick, paint_cube));
+            app.add_systems(FixedUpdate, fixed_probe);
+            app.add_systems(Last, last_probe);
         })
-        .add_systems(Update, (rotate, alive_tick))
         .run();
 }
 
@@ -99,7 +101,7 @@ fn paint_cube(
     mut materials: ResMut<Assets<StandardMaterial>>,
     q: Query<&MeshMaterial3d<StandardMaterial>, With<Cube>>,
 ) {
-    let new_color = Color::srgb(0.0, 0.0, 1.0); // <<< BLUE via FULL MAP no-filter
+    let new_color = Color::srgb(0.0, 1.0, 0.0); // <<< LIVE GREEN
     if let Some(h) = q.iter().next() {
         if let Some(mut m) = materials.get_mut(h.id()) {
             if m.base_color != new_color {
@@ -107,5 +109,23 @@ fn paint_cube(
                 info!("PAINTED cube -> {:?}", new_color);
             }
         }
+    }
+}
+
+/// In FixedUpdate (mirror): bump this marker to prove FixedUpdate is hot too.
+fn fixed_probe(mut last: Local<u32>) {
+    let marker: u32 = 3; // <<< LIVE2 fixed marker
+    if *last != marker {
+        *last = marker;
+        info!("FIXED-PROBE marker={marker}");
+    }
+}
+
+/// In Last (mirror): bump this marker to prove Last is hot too.
+fn last_probe(mut last: Local<u32>) {
+    let marker: u32 = 3; // <<< LIVE2 last marker
+    if *last != marker {
+        *last = marker;
+        info!("LAST-PROBE marker={marker}");
     }
 }

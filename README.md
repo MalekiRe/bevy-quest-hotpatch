@@ -121,8 +121,9 @@ fn probe(time: Res<Time>, mut last: Local<f32>) {
 
 ### 2. `with_hot_patch`
 
-Register systems inside the closure; it re-runs on each patch and rebuilds the schedule with the
-new system addresses. No macro needed:
+Register systems inside the closure; it re-runs on each patch and hot-swaps them into the running
+app. No macro needed. Works in **every standard schedule** (First, PreUpdate, Update, PostUpdate,
+Last, FixedPreUpdate, FixedUpdate, FixedPostUpdate, FixedLast):
 
 ```rust
 App::new()
