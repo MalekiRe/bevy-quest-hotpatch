@@ -50,12 +50,15 @@ pub trait HotPatchedAppExt {
     ///     .add_plugins(DefaultPlugins)
     ///     .add_plugins(SimpleSubsecondPlugin::default())
     ///     .with_hot_patch(|app: &mut App| {
-    ///         // Systems in the `StartupRerunHotPatch` schedule are re-run on hot-reload.
+    ///         // Systems in the `StartupRerunHotPatch` schedule will be rerun on hot-reload.
+    ///         // They require `#[hot(hot_patch_signature = true)]`
     ///         app.add_systems(StartupRerunHotPatch, setup);
+    ///         // All other systems do not require `#[hot]`.
     ///         app.add_systems(Update, my_system);
     ///         app.add_systems(PostUpdate, second_system);
     ///     });
     ///
+    /// #[hot(hot_patch_signature = true)]
     /// fn setup(mut commands: Commands) {
     ///     commands.spawn(Camera2d::default());
     ///     commands.spawn(Text::new("Hello, world!"));

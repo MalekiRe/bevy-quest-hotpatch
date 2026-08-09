@@ -15,7 +15,7 @@ pub mod hot_patched_app;
 pub mod prelude {
     pub use super::{
         HotPatched, SimpleSubsecondPlugin,
-        hot_patched_app::{HotPatchedAppExt as _, StartupRerunHotPatch},
+        hot_patched_app::HotPatchedAppExt as _,
     };
 }
 
