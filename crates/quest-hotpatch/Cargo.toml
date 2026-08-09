@@ -3,7 +3,7 @@ name = "quest-hotpatch"
 version = "0.1.0"
 edition = "2024"
 publish = false
-description = "Recreation of BevyFlock's with_hot_patch API: hot-patch Bevy systems (add/remove/change at runtime) via Dioxus subsecond, tuned for cargo-apk builds (Android/Quest)."
+description = "with_hot_patch: hot-patch Bevy systems (add/remove/change at runtime) via Dioxus subsecond, tuned for cargo-apk builds (Android/Quest)."
 
 [lib]
 name = "quest_hotpatch"

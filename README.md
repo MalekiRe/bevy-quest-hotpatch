@@ -15,8 +15,8 @@ on a phone or a Quest headset (OpenXR). It patches the already-running process i
 - **Live patches single source-file edits** to the running APK (phone and Quest).
 - **Two hot-patch styles** — pick whichever fits:
   - **Bevy's native hotpatching** (`bevy` feature `hotpatching` → `HotPatchPlugin` is wired into `DefaultPlugins` automatically). Edit any system body; bevy re-points it at runtime.
-  - **`with_hot_patch`** (BevyFlock-style API in this repo) — register systems inside a closure that re-runs on each patch. Macro-free.
-- **Full unfiltered jump table** — every symbol that changed in the tip crate is remapped, with no hand-maintained allowlist.
+  - **`with_hot_patch`** — register systems inside a closure that re-runs on each patch. Macro-free.
+- **Full unfiltered jump table** — every symbol that changed in the tip crate is remapped, with no hand-maintained filtering.
 - **`cargo` integrated** — the toolchain is a `cargo` subcommand: `cargo quest-hotpatch build|install|serve`.
 - **Workspace-aware** — build artifacts and captures are found under the correct workspace target root automatically.
 - **OpenXR/Quest ready** — the same patch engine drives `cargo apk build` apps, including the bundled `oxr-app`.
@@ -34,7 +34,7 @@ bevy-quest-hotpatch/                 # cargo workspace
 │   │       ├── engine.rs            # thin tip-crate rebuild, stub gen, jump-table build
 │   │       ├── server.rs            # dioxus-protocol dev-server (ws://…/_dioxus) + adb reverse
 │   │       └── bin/                 # rustc/linker capture shims
-│   ├── quest-hotpatch/              # recreated BevyFlock `with_hot_patch` + `#[hot]` API
+│   ├── quest-hotpatch/              # recreated `with_hot_patch` + `#[hot]` API
 │   └── quest-hotpatch-macros/       # the `#[hot]` attribute macro
 ├── app/                             # phone demo (cargo-apk, bevy 0.19)
 └── oxr-app/                         # Quest 3 OpenXR demo (bevy_oxr)
@@ -120,7 +120,7 @@ fn probe(time: Res<Time>, mut last: Local<f32>) {
 }
 ```
 
-### 2. `with_hot_patch` (BevyFlock-style)
+### 2. `with_hot_patch`
 
 Register systems inside the closure; it re-runs on each patch and rebuilds the schedule with the
 new system addresses. No macro needed:

@@ -1,4 +1,4 @@
 # quest-hotpatch
 
-Recreation of the BevyFlock `with_hot_patch` API for `cargo apk` (Android/Quest) hot-patching.
+Recreation of the `with_hot_patch` hot-patching API for `cargo apk` (Android/Quest).
 See the repo README.
