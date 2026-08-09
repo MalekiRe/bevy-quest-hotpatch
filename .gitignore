@@ -13,3 +13,9 @@ screens/
 
 # Misc scratch
 questdev.log
+
+# crash/tombstone debug dumps
+crash*.tombstone
+crash_all.txt
+crash_stream.txt
+serve-*.log
