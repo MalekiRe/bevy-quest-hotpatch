@@ -1,0 +1,5 @@
+# Workspace root: the quest-hotpatch ecosystem (cargo subcommand, with_hot_patch lib, samples)
+[workspace]
+resolver = "2"
+members = ["crates/*", "app", "oxr-app"]
+default-members = ["crates/*"]

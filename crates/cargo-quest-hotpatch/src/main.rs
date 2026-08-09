@@ -37,6 +37,14 @@ struct Cli {
     #[arg(long = "crate", global = true)]
     crate_name: Option<String>,
 
+    /// The app's hot function names (comma-separated, matched against mangled
+    /// symbol names). These + subsecond's dispatch trampolines are the only
+    /// symbols allowed into the jump table.
+    #[arg(long = "hot-funcs", global = true, value_delimiter = ',',
+          default_value = "desired_color,hot_flag,rotate,paint_cube")]
+    hot_funcs: Vec<String>,
+
+
     /// Devserver port (must match what the app dials: 127.0.0.1:8080 on Android)
     #[arg(long, global = true, default_value_t = 8080)]
     port: u16,
@@ -85,11 +93,74 @@ fn detect_lib_name(app_dir: &std::path::Path) -> Result<String> {
             }
             continue;
         }
-        if in_lib && let Some(v) = line.strip_prefix("name = ") {
-            return Ok(v.trim_matches('"').to_string());
+        if in_lib {
+            if let Some(v) = line.strip_prefix("name = ") {
+                return Ok(v.trim_matches('"').to_string());
+            }
         }
     }
     fallback.ok_or_else(|| anyhow::anyhow!("no [lib] name in {cargo_toml:?}"))
+}
+
+/// Workspace-aware target root: for a crate inside a cargo workspace, cargo
+/// builds into <workspace-root>/target. Falls back to <app>/target.
+fn ws_target_root(app: &std::path::Path) -> PathBuf {
+    let mut d = app.to_path_buf();
+    loop {
+        let cargo = d.join("Cargo.toml");
+        if cargo.exists() {
+            let txt = std::fs::read_to_string(&cargo).unwrap_or_default();
+            if txt.contains("[workspace]") {
+                return d.join("target");
+            }
+        }
+        if let Some(parent) = d.parent() {
+            d = parent.to_path_buf();
+        } else {
+            break;
+        }
+    }
+    app.join("target")
+}
+
+/// Newest existing artifact among candidates.
+fn pick_newest(cands: Vec<PathBuf>) -> Option<PathBuf> {
+    cands
+        .into_iter()
+        .filter(|c| c.exists())
+        .max_by_key(|c| std::fs::metadata(c).map(|m| m.modified().unwrap_or(std::time::UNIX_EPOCH)).unwrap_or(std::time::UNIX_EPOCH))
+}
+
+fn original_binary_for(cli: &Cli) -> PathBuf {
+    let name = cli.crate_name.as_deref().unwrap_or("quest_hotpatch_app");
+    let ws = ws_target_root(&app_dir(cli));
+    let app = app_dir(cli);
+    let cands: Vec<PathBuf> = vec![
+        ws.join(format!("aarch64-linux-android/debug/lib{name}.so")),
+        app.join(format!("target/aarch64-linux-android/debug/lib{name}.so")),
+    ];
+    pick_newest(cands.clone()).unwrap_or_else(|| cands[0].clone())
+}
+
+fn apk_for(cli: &Cli) -> PathBuf {
+    let app = app_dir(cli);
+    let ws = ws_target_root(&app);
+    let mut cands: Vec<PathBuf> = Vec::new();
+    if let Ok(rd) = std::fs::read_dir(ws.join("debug/apk")) {
+        for e in rd.flatten() {
+            if e.path().extension().map(|x| x == "apk").unwrap_or(false) {
+                cands.push(e.path());
+            }
+        }
+    }
+    if let Ok(rd) = std::fs::read_dir(app.join("target/debug/apk")) {
+        for e in rd.flatten() {
+            if e.path().extension().map(|x| x == "apk").unwrap_or(false) {
+                cands.push(e.path());
+            }
+        }
+    }
+    pick_newest(cands).unwrap_or_else(|| app.join("target/debug/apk/questhotpatch.apk"))
 }
 
 fn app_dir(cli: &Cli) -> PathBuf {
@@ -115,6 +186,9 @@ fn capture_fat_build(cli: &Cli) -> Result<()> {
     let scratch = engine::scratch_dir(&app);
     let rustc_cache = scratch.join("rustc");
     let linker_cache = scratch.join("linker");
+    // fresh captures every build (guards against cross-project pollution)
+    let _ = std::fs::remove_dir_all(&rustc_cache);
+    let _ = std::fs::remove_dir_all(&linker_cache);
     std::fs::create_dir_all(&rustc_cache)?;
     std::fs::create_dir_all(&linker_cache)?;
 
@@ -154,7 +228,7 @@ fn capture_fat_build(cli: &Cli) -> Result<()> {
 
 fn deploy(cli: &Cli) -> Result<()> {
     let d = adb::device(cli.device.as_deref())?;
-    let apk = app_dir(cli).join("target/debug/apk/questhotpatch.apk");
+    let apk = apk_for(cli);
     tracing::info!("installing {apk:?} on {d}");
     adb::install(&d, &apk)?;
     adb::launch(&d, &cli.package, &cli.activity)?;
@@ -197,10 +271,7 @@ async fn serve_loop(cli: &Cli) -> Result<()> {
     // If we have a prior capture, load the patch engine; otherwise the loop
     // starts in full-rebuild-only mode until a `build` has been run.
     let scratch = engine::scratch_dir(&app);
-    let original = app.join(format!(
-        "target/aarch64-linux-android/debug/lib{}.so",
-        cli.crate_name.as_deref().unwrap_or("quest_hotpatch_app")
-    ));
+    let original = original_binary_for(cli);
     let ndk = std::env::var("ANDROID_NDK_HOME").unwrap_or_else(|_| {
         std::env::var("ANDROID_HOME")
             .map(|h| format!("{h}/ndk/30.0.14904198"))
@@ -209,8 +280,14 @@ async fn serve_loop(cli: &Cli) -> Result<()> {
     let real_linker = format!(
         "{ndk}/toolchains/llvm/prebuilt/linux-x86_64/bin/aarch64-linux-android26-clang"
     );
-    let session =
-        engine::PatchSession::load(&app, cli.crate_name.as_deref().unwrap_or("quest_hotpatch_app"), &original, std::path::Path::new(&real_linker)).ok();
+    let session = engine::PatchSession::load(
+        &app,
+        cli.crate_name.as_deref().unwrap_or("quest_hotpatch_app"),
+        &cli.hot_funcs,
+        &original,
+        std::path::Path::new(&real_linker),
+    )
+    .ok();
     if let Some(s) = &session {
         tracing::info!(ready = s.is_ready(), "patch engine loaded");
     } else {

@@ -1,11 +1,14 @@
-//! Bevy + Subsecond live hot-patch demo (cargo-apk / Android, Quest-ready).
+//! Bevy 0.19 demo app using the recreated `with_hot_patch` API
+//! (BevyFlock-style) for subsecond hot-patching on Android via cargo-apk.
 //!
-//! A cube is painted a solid color EVERY FRAME through `bevy::app::hotpatch::call`
-//! (which routes through subsecond's jump table). Editing BLUE->RED and saving
-//! hot-patches the running app so the cube turns red live — the demonstration.
+//! Two hot-patchable things, both edited without restart:
+//!   - `desired_color()` is a #[hot] system-adjacent fn (routed via subsecond)
+//!   - `paint_cube` is a system registered inside `with_hot_patch`, so editing
+//!     its body re-runs the setup closure and rebuilds the schedule.
 
 use bevy::prelude::*;
 use bevy::window::WindowPlugin;
+use quest_hotpatch::prelude::*;
 
 fn run_app() {
     App::new()
@@ -13,14 +16,14 @@ fn run_app() {
             primary_window: Some(Window { resizable: false, ..default() }),
             ..default()
         }))
+        .add_plugins(SimpleSubsecondPlugin::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (rotate, paint_cube).chain())
+        .add_systems(Update, (rotate, paint_cube, alive_tick, probe_hotpatch))
         .run();
 }
 
 // =============================================================================
-// Entry points (hand-rolled; matches what `#[bevy_main]` generates, plus the
-// subsecond `main` anchor for dlsym and whisker's `whisker_aslr_anchor`.
+// Entry points (hand-rolled; same as before: subsecond needs `main` exported)
 // =============================================================================
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
@@ -33,23 +36,17 @@ extern "C" fn android_main(android_app: bevy::android::android_activity::Android
 #[unsafe(no_mangle)]
 pub extern "C" fn main() {}
 
-
-// ---------------------------------------------------------------------------
-// ASLR anchor for the subsecond patch engine (REAL symbol, present in app .so
-// and every patch .so). Do not remove.
-// ---------------------------------------------------------------------------
-#[unsafe(no_mangle)]
-pub extern "C" fn whisker_aslr_anchor() {}
-
 #[cfg(not(target_os = "android"))]
 fn main() {
     run_app();
 }
 
+#[unsafe(no_mangle)]
+pub extern "C" fn whisker_aslr_anchor() {}
+
 // =============================================================================
 // Scene
 // =============================================================================
-
 #[derive(Component)]
 struct Cube;
 
@@ -66,13 +63,14 @@ fn setup(
         DirectionalLight::default(),
         Transform::from_xyz(4.0, 8.0, 4.0).looking_at(Vec3::ZERO, Vec3::Y),
     ));
+    let mat = materials.add(StandardMaterial {
+        unlit: true,
+        base_color: Color::srgb(0.0, 0.0, 1.0),
+        ..default()
+    });
     commands.spawn((
         Mesh3d(meshes.add(Cuboid::new(1.0, 1.0, 1.0))),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            unlit: true,
-            base_color: Color::srgb(0.0, 0.0, 1.0), // BLUE baseline
-            ..default()
-        })),
+        MeshMaterial3d(mat),
         Transform::from_xyz(0.0, 0.0, -4.0),
         Cube,
         Rotator,
@@ -85,26 +83,46 @@ fn rotate(time: Res<Time>, mut q: Query<&mut Transform, With<Rotator>>) {
     }
 }
 
-/// Hot-patchable color source: a PLAIN tip-crate fn, routed through the jump
-/// table via subsecond::call (fn-pointer / call_as_ptr path). Change BLUE->RED
-/// and save to live-patch the color without a rebuild.
+/// HOT: change this to RED and the running app updates it live (#[hot] routes
+/// the call through subsecond's jump table).
+#[hot]
 fn desired_color() -> Color {
     Color::srgb(0.0, 0.0, 1.0) // <<< BLUE baseline. Patch me to RED.
 }
 
-/// Applies the hot-patchable color every frame. (Bevy 0.19's FunctionSystem
-/// routing doesn't re-read the jump table, so we route the hot function
-/// through subsecond::call ourselves with a coerce-to-fn-pointer.)
+// =============================================================================
+// Log-based hot-patch probe (screen-independent): if `#[hot]` works, editing
+// hot_flag and saving makes probe_hotpatch log HOTPATCH-WORKED.
+// =============================================================================
+#[hot]
+fn hot_flag() -> u32 {
+    0 // <<< baseline. Patch me to 1 and watch the log.
+}
+
+fn alive_tick(time: Res<Time>, mut last_t: Local<f32>) {
+    if time.elapsed_secs() - *last_t > 2.0 {
+        *last_t = time.elapsed_secs();
+        info!("ALIVE tick at {:.1}s", time.elapsed_secs());
+    }
+}
+
+fn probe_hotpatch(mut last: Local<u32>) {
+    let v = hot_flag();
+    if *last != v {
+        info!("HOTPATCH-WORKED: hot_flag changed {} -> {} via #[hot]", *last, v);
+        *last = v;
+    }
+}
+
+/// Registered via with_hot_patch: editing this BODY re-runs the closure and
+/// rebuilds the schedule with the new system (hot without #[hot]).
 fn paint_cube(
     mut materials: ResMut<Assets<StandardMaterial>>,
     q: Query<&MeshMaterial3d<StandardMaterial>, With<Cube>>,
 ) {
     if let Some(h) = q.iter().next().map(|h| h.0.clone()) {
-        let f: fn() -> Color = desired_color; // size-8 fn pointer -> call_as_ptr path
-        let color = bevy::app::hotpatch::call(f);
         if let Some(mut m) = materials.get_mut(h.id()) {
-            m.base_color = Color::srgb(0.0, 1.0, 0.0); // SYSTEM-BODY EDIT -> GREEN (desired_color untouched)
+            m.base_color = desired_color();
         }
     }
 }
-

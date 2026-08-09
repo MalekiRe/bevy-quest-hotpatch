@@ -14,7 +14,8 @@ crate-type = ["rlib", "cdylib"]
 # NOTE: cargo-apk requires android-native-activity (NOT android-game-activity),
 # same as bevy_oxr's android example.
 # `hotpatching` auto-wires HotPatchPlugin into DefaultPlugins.
-bevy = { version = "0.19", features = ["android-native-activity", "hotpatching"] }
+bevy = { version = "0.19", features = ["android-native-activity"] }
+quest-hotpatch = { path = "../crates/quest-hotpatch" }
 dioxus-devtools = "0.7.10"
 dioxus-cli-config = "0.7.10"
 

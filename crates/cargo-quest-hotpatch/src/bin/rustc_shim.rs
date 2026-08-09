@@ -20,6 +20,18 @@ fn main() {
     let real_rustc = all.first().cloned().unwrap_or_else(|| "rustc".into());
     let mut args = all[1..].to_vec();
 
+    // Absolutize the crate source path so the thin-rebuild replay works from any cwd
+    // (the capture may run with a different working dir than the engine's replay).
+    if let Some(i) = args.iter().position(|a| a.ends_with(".rs") && !a.starts_with('-')) {
+        let src = std::path::Path::new(&args[i]);
+        if src.is_relative() {
+            // Trust the real process cwd, NOT the PWD env var (which can be a
+            // stale value from the parent shell on shared machines).
+            let base = std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from("."));
+            args[i] = std::path::Path::new(&base).join(src).to_string_lossy().into_owned();
+        }
+    }
+
     // Determinism: pin -C metadata so symbol mangling is identical between the
     // deployed build and the thin-rebuild replay (else the jump-table name->map
     // diff never matches and patching silently no-ops).
@@ -64,6 +76,18 @@ fn main() {
         .unwrap_or_else(|| "unknown".into());
 
     let cache = env::var("WHISKER_RUSTC_CACHE_DIR").unwrap_or_else(|_| "/tmp/rustc-capture".into());
+
+    // Only capture invocations whose source file actually exists (guards against
+    // unrelated concurrent builds on the same machine writing into our cache).
+    let src = args.iter().find(|a| a.ends_with(".rs") && !a.starts_with('-'));
+    if let Some(src) = src {
+        if !Path::new(src).exists() {
+            std::process::exit(match std::process::Command::new(&real_rustc).args(&args).status() {
+                Ok(s) => s.code().unwrap_or(1),
+                Err(e) => { eprintln!("rustc-shim: {e}"); 1 }
+            });
+        }
+    }
 
     let _ = std::fs::create_dir_all(&cache);
     let ts = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_micros();

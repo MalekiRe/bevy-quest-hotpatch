@@ -21,6 +21,7 @@ pub fn scratch_dir(workspace_root: &Path) -> PathBuf {
 
 pub struct PatchSession {
     pub crate_name: String,
+    pub hot_funcs: Vec<String>,
     pub workspace_root: PathBuf,
     pub original_binary: PathBuf,
     pub real_linker: PathBuf,
@@ -33,7 +34,13 @@ pub struct PatchSession {
 impl PatchSession {
     /// Load state produced by the fat build (`build` subcommand / `capture_fat_build`):
     /// captured rustc+linker invocations + the original APK `.so` as the baseline.
-    pub fn load(workspace_root: &Path, crate_name: &str, original_binary: &Path, real_linker: &Path) -> Result<Self> {
+    pub fn load(
+        workspace_root: &Path,
+        crate_name: &str,
+        hot_funcs: &[String],
+        original_binary: &Path,
+        real_linker: &Path,
+    ) -> Result<Self> {
         let scratch = scratch_dir(workspace_root);
         let captured_rustc = load_captured_args(&scratch.join("rustc"), Some("aarch64-linux-android"))
             .context("load captured rustc args")?;
@@ -43,6 +50,7 @@ impl PatchSession {
             .with_context(|| format!("parse original binary {}", original_binary.display()))?;
         Ok(Self {
             crate_name: crate_name.to_string(),
+            hot_funcs: hot_funcs.to_vec(),
             workspace_root: workspace_root.to_path_buf(),
             original_binary: original_binary.to_path_buf(),
             real_linker: real_linker.to_path_buf(),
@@ -75,7 +83,12 @@ impl PatchSession {
             .captured_rustc
             .get(&self.crate_name)
             .with_context(|| format!("no captured rustc invocation for tip crate {}", self.crate_name))?;
-        let obj_plan = build_obj_plan(captured_rustc, &objects);
+        let mut obj_plan = build_obj_plan(captured_rustc, &objects);
+        // Determinism across machines/agents: the tip crate source is always
+        // <workspace_root>/src/lib.rs; ignore whatever dir the capture ran from.
+        if let Some(i) = obj_plan.args.iter().position(|a| a.ends_with(".rs") && !a.starts_with('-')) {
+            obj_plan.args[i] = self.workspace_root.join("src/lib.rs").to_string_lossy().into_owned();
+        }
         let object_path = run_obj_plan(&obj_plan, &self.rustc_path, &self.workspace_root).await?;
 
         // 2. Resolve the symbols the patch references against the live app,
@@ -138,13 +151,32 @@ impl PatchSession {
             new_base_main,
         );
 
+        let aslr_ref_main = self
+            .cache
+            .symbols
+            .by_name
+            .get("main")
+            .map(|s| s.address)
+            .unwrap_or(self.cache.aslr_reference);
+        let new_base_main = new_syms
+            .by_name
+            .get("main")
+            .map(|s| s.address)
+            .unwrap_or(new_base_address);
+        let mut plan = build_jump_table(
+            &self.cache.symbols,
+            &new_syms,
+            patch_path.clone(),
+            aslr_ref_main,
+            new_base_main,
+        );
+
         // SAFETY-CRITICAL FILTER: remap ONLY the intended hot functions.
         // Redirecting everything (e.g. bevy systems whose dispatchers use a
         // different calling convention, or dep-adjacent tip functions running on
         // render/compute threads) makes the app execute wrong code and crash.
         // The demo's hot boundary is `desired_color`; every other entry falls
         // back to the deployed (old) code, which stays correct.
-        const HOT_FUNCS: &[&str] = &["desired_color", "paint_cube"];
         let old_name_of: std::collections::HashMap<u64, &str> = self
             .cache
             .symbols
@@ -159,14 +191,45 @@ impl PatchSession {
             .map
             .into_iter()
             .filter(|(k, _)| {
-                old_name_of
-                    .get(k)
-                    .map(|name| HOT_FUNCS.iter().any(|h| name.contains(h)))
-                    .unwrap_or(false)
+                old_name_of.get(k).map(|_| true).unwrap_or(false)
             })
             .collect();
         tracing::info!(before = before, after = plan.table.map.len(), "jump table filtered");
-        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?
+        // Map ONLY:
+        //   - the app's declared hot functions (--hot-funcs), and
+        //   - subsecond's dispatch trampolines (call_it / HotFunction), which the
+        //     runtime actually consults for #[hot] and with_hot_patch.
+        // Bevy's own indirect machinery (render/asset-prep monomorphs, FunctionSystem)
+        // stays out of the table entirely => no calling-convention/MTE crashes.
+        let keep = &self.hot_funcs;
+        let old_name_of: std::collections::HashMap<u64, &str> = self
+            .cache
+            .symbols
+            .by_name
+            .iter()
+            .map(|(n, s)| (s.address, n.as_str()))
+            .collect();
+        let before = plan.table.map.len();
+        plan.table.map = plan
+            .table
+            .map
+            .into_iter()
+            .filter(|(k, _)| {
+                old_name_of
+                    .get(k)
+                    .map(|name| {
+                        keep.iter().any(|h| name.contains(h.as_str()))
+                            || name.contains("subsecond")
+                            || name.contains("call_it")
+                            || name.contains("HotFunction")
+                            || name.contains("with_hot_patch")
+                    })
+                    .unwrap_or(false)
+            })
+            .collect();
+        tracing::info!(before = before, after = plan.table.map.len(), "hot+dispatch map");
+
+        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?
         for pat in ["paint_cube", "rotate"] {
             let old_present = self.cache.symbols.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);
             let new_present = new_syms.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);
