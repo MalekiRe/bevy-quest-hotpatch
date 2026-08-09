@@ -246,6 +246,7 @@ impl PatchSession {
             .collect();
         tracing::info!(before = before, after = plan.table.map.len(), "hot+dispatch map");
 
+
         // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?
         for pat in ["paint_cube", "rotate"] {
             let old_present = self.cache.symbols.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);

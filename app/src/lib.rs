@@ -1,10 +1,12 @@
-//! Bevy 0.19 demo app using the recreated `with_hot_patch` API
-//! (BevyFlock-style) for subsecond hot-patching on Android via cargo-apk.
+//! Bevy 0.19 demo using the recreated `with_hot_patch` API (BevyFlock-style)
+//! for subsecond hot-patching on Android via cargo-apk.
 //!
-//! Two hot-patchable things, both edited without restart:
-//!   - `desired_color()` is a #[hot] system-adjacent fn (routed via subsecond)
-//!   - `paint_cube` is a system registered inside `with_hot_patch`, so editing
-//!     its body re-runs the setup closure and rebuilds the schedule.
+//! Hot-patching mechanism (deliberately NO per-frame #[hot] jump-table dispatch,
+//! which crashes bevy's render prep on MTE phones): systems are registered inside
+//! `with_hot_patch`. On hot-reload it re-runs the closure => processes the patch
+//! ONE time through subsecond's jump table, re-registers the (new) system with a
+//! fresh function pointer, and rebuilds the schedule. After that the system runs
+//! DIRECTLY (no per-frame table consult). Edit `paint_cube`'s body to recolor live.
 
 use bevy::prelude::*;
 use bevy::window::WindowPlugin;
@@ -18,28 +20,21 @@ fn run_app() {
         }))
         .add_plugins(SimpleSubsecondPlugin::default())
         .add_systems(Startup, setup)
-        .add_systems(Update, (rotate, paint_cube, alive_tick, probe_hotpatch))
+        .with_hot_patch(|app| {
+            app.add_systems(Update, paint_cube);
+        })
+        .add_systems(Update, (rotate, alive_tick))
         .run();
 }
 
 // =============================================================================
-// Entry points (hand-rolled; same as before: subsecond needs `main` exported)
+// Entry points
 // =============================================================================
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 extern "C" fn android_main(android_app: bevy::android::android_activity::AndroidApp) {
-    // Dioxus disables MTE in dev deps to avoid stale-tag crashes on data races
-    // that are harmless without tag checking (our demo races StandardMaterial).
-    unsafe { prctl(PR_SET_TAGGED_ADDR_CTRL, 0, 0, 0, 0) };
     let _ = bevy::android::ANDROID_APP.set(android_app);
     run_app();
-}
-
-#[cfg(target_os = "android")]
-const PR_SET_TAGGED_ADDR_CTRL: std::ffi::c_int = 55;
-#[cfg(target_os = "android")]
-unsafe extern "C" {
-    fn prctl(option: std::ffi::c_int, arg2: std::ffi::c_ulong, arg3: std::ffi::c_ulong, arg4: std::ffi::c_ulong, arg5: std::ffi::c_ulong) -> std::ffi::c_int;
 }
 
 #[cfg(target_os = "android")]
@@ -47,9 +42,7 @@ unsafe extern "C" {
 pub extern "C" fn main() {}
 
 #[cfg(not(target_os = "android"))]
-fn main() {
-    run_app();
-}
+fn main() { run_app(); }
 
 #[unsafe(no_mangle)]
 pub extern "C" fn whisker_aslr_anchor() {}
@@ -75,7 +68,7 @@ fn setup(
     ));
     let mat = materials.add(StandardMaterial {
         unlit: true,
-        base_color: Color::srgb(0.0, 0.0, 1.0),
+        base_color: Color::srgb(0.0, 0.0, 1.0), // BLUE baseline
         ..default()
     });
     commands.spawn((
@@ -93,22 +86,6 @@ fn rotate(time: Res<Time>, mut q: Query<&mut Transform, With<Rotator>>) {
     }
 }
 
-/// HOT: change this to RED and the running app updates it live (#[hot] routes
-/// the call through subsecond's jump table).
-#[hot]
-fn desired_color() -> Color {
-    Color::srgb(0.0, 0.0, 1.0) // <<< patched-no-dispatch
-}
-
-// =============================================================================
-// Log-based hot-patch probe (screen-independent): if `#[hot]` works, editing
-// hot_flag and saving makes probe_hotpatch log HOTPATCH-WORKED.
-// =============================================================================
-#[hot]
-fn hot_flag() -> u32 {
-    12 // <<< race-free v2 test
-}
-
 fn alive_tick(time: Res<Time>, mut last_t: Local<f32>) {
     if time.elapsed_secs() - *last_t > 2.0 {
         *last_t = time.elapsed_secs();
@@ -116,31 +93,19 @@ fn alive_tick(time: Res<Time>, mut last_t: Local<f32>) {
     }
 }
 
-fn probe_hotpatch(mut last: Local<u32>) {
-    let v = hot_flag();
-    if *last != v {
-        info!("HOTPATCH-WORKED: hot_flag changed {} -> {} via #[hot]", *last, v);
-        *last = v;
-    }
-}
-
-/// Registered via with_hot_patch: editing this BODY re-runs the closure and
-/// rebuilds the schedule with the new system (hot without #[hot]).
+/// Registered via with_hot_patch: edit this BODY (e.g. the color) and save while
+/// the app runs -> the closure re-runs once -> schedule rebuilt -> cube recolors.
 fn paint_cube(
     mut materials: ResMut<Assets<StandardMaterial>>,
     q: Query<&MeshMaterial3d<StandardMaterial>, With<Cube>>,
 ) {
-    // Race-free: convert the hot color to a tagless LinearRgba ONCE and write
-    // only when it changes. Writing a raw `Color` every frame races the render
-    // thread's asset prep (torn enum discriminant -> indexed-branch OOB).
-    if let Some(h) = q.iter().next().map(|h| h.0.clone()) {
-        let Some(mut m) = materials.get_mut(h.id()) else { return };
-        // Write only when the color actually changes (once per hot patch): a
-        // per-frame 20-byte write races the render thread's asset prep.
-        let target = desired_color();
-        if m.base_color != target {
-            m.base_color = target;
+    let new_color = Color::srgb(0.0, 1.0, 0.0); // <<< live-patched to GREEN via with_hot_patch
+    if let Some(h) = q.iter().next() {
+        if let Some(mut m) = materials.get_mut(h.id()) {
+            if m.base_color != new_color {
+                m.base_color = new_color;
+                info!("PAINTED cube -> {:?}", new_color);
+            }
         }
     }
 }
-// thinlink-capture-v2 (1786236363457888709)

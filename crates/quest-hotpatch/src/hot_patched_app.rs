@@ -84,6 +84,11 @@ impl HotPatchedAppExt for App {
         app.init_schedule(Startup);
         app.init_schedule(PostStartup);
         app.init_schedule(PreStartup);
+        // Ensure the real App has them too — on some plugin orders these aren't
+        // registered yet, and the `.unwrap()` below would panic at startup.
+        self.init_schedule(Startup);
+        self.init_schedule(PostStartup);
+        self.init_schedule(PreStartup);
         std::mem::swap(
             app.get_schedule_mut(Startup).unwrap(),
             self.get_schedule_mut(Startup).unwrap(),
