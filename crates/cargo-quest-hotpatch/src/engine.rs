@@ -39,6 +39,10 @@ pub fn scratch_dir(workspace_root: &Path) -> PathBuf {
 pub struct PatchSession {
     pub crate_name: String,
     pub hot_funcs: Vec<String>,
+    /// Precomputed once at load: defined, non-zero addresses in the old table.
+    /// Reused by the full-map filter every patch (was rebuilt per patch: ~0.3s
+    /// over 700k entries).
+    pub valid_old: std::collections::HashSet<u64>,
     pub workspace_root: PathBuf,
     pub original_binary: PathBuf,
     pub real_linker: PathBuf,
@@ -65,9 +69,17 @@ impl PatchSession {
             load_captured_linker_args(&scratch.join("linker")).context("load captured linker args")?;
         let cache = HotpatchModuleCache::from_path(original_binary)
             .with_context(|| format!("parse original binary {}", original_binary.display()))?;
+        let valid_old = cache
+            .symbols
+            .by_name
+            .values()
+            .filter(|s| !s.is_undefined && s.address != 0)
+            .map(|s| s.address)
+            .collect();
         Ok(Self {
             crate_name: crate_name.to_string(),
             hot_funcs: hot_funcs.to_vec(),
+            valid_old,
             workspace_root: workspace_root.to_path_buf(),
             original_binary: original_binary.to_path_buf(),
             real_linker: real_linker.to_path_buf(),
@@ -89,6 +101,7 @@ impl PatchSession {
     ///
     /// `device_aslr` = the `aslr_reference()` the app reported over the wire.
     pub async fn build_patch(&self, device_aslr: u64) -> Result<(JumpTable, PathBuf)> {
+        let obj_t0 = std::time::Instant::now();
         let scratch = scratch_dir(&self.workspace_root);
         let objects = scratch.join("objects");
         let patches = scratch.join("patches");
@@ -107,6 +120,7 @@ impl PatchSession {
             obj_plan.args[i] = self.workspace_root.join("src/lib.rs").to_string_lossy().into_owned();
         }
         let object_path = run_obj_plan(&obj_plan, &self.rustc_path, &self.workspace_root).await?;
+        tracing::info!(t_ms = obj_t0.elapsed().as_millis(), "patch: obj rebuild");
 
         // 2. Resolve the symbols the patch references against the live app,
         //    via a synthesized stub object (whisker's approach).
@@ -117,6 +131,7 @@ impl PatchSession {
         )?;
         let stub_path = objects.join("stub.o");
         std::fs::write(&stub_path, &stub_bytes)?;
+        tracing::info!(t_ms = obj_t0.elapsed().as_millis(), "patch: stub done");
 
         // 3. Link into a patch shared library with the NDK clang, using the
         //    captured linker invocation as the argument template.
@@ -135,9 +150,11 @@ impl PatchSession {
             &[],
         );
         run_link_plan(&link_plan, &self.real_linker, &self.workspace_root).await?;
+        tracing::info!(t_ms = obj_t0.elapsed().as_millis(), "patch: linked");
 
         // 4. Diff original vs patch symbol tables and build the JumpTable.
         let new_syms = parse_symbol_table(&patch_path).context("parse patch symbols")?;
+        tracing::info!(t_ms = obj_t0.elapsed().as_millis(), "patch: parsed new syms");
         // Anchor symbol the runtime + whisker use to pin ASLR; must exist in
         // BOTH the original binary (exported by our app) and the patch.
         let new_base_address = new_syms
@@ -148,6 +165,8 @@ impl PatchSession {
         // Subsecond's apply_patch() anchors ASLR on `main` (aslr_reference() =
         // dlsym("main")), so the JumpTable must use main's build-time address for
         // BOTH aslr_reference and new_base_address — matching the patch .o's.
+        // Anchor subsecond's apply_patch() on `main` in BOTH binaries (the
+        // runtime anchors on dlsym("main"); any mismatch skews every table/stub).
         let aslr_ref_main = self
             .cache
             .symbols
@@ -160,7 +179,7 @@ impl PatchSession {
             .get("main")
             .map(|s| s.address)
             .unwrap_or(new_base_address);
-        let mut plan = build_jump_table(
+        let mut plan = build_jump_table_lean(
             &self.cache.symbols,
             &new_syms,
             patch_path.clone(),
@@ -168,64 +187,21 @@ impl PatchSession {
             new_base_main,
         );
 
-        let aslr_ref_main = self
-            .cache
-            .symbols
-            .by_name
-            .get("main")
-            .map(|s| s.address)
-            .unwrap_or(self.cache.aslr_reference);
-        let new_base_main = new_syms
-            .by_name
-            .get("main")
-            .map(|s| s.address)
-            .unwrap_or(new_base_address);
-        let mut plan = build_jump_table(
-            &self.cache.symbols,
-            &new_syms,
-            patch_path.clone(),
-            aslr_ref_main,
-            new_base_main,
-        );
-
-        // SAFETY-CRITICAL FILTER: remap ONLY the intended hot functions.
-        // Redirecting everything (e.g. bevy systems whose dispatchers use a
-        // different calling convention, or dep-adjacent tip functions running on
-        // render/compute threads) makes the app execute wrong code and crash.
-        // The demo's hot boundary is `desired_color`; every other entry falls
-        // back to the deployed (old) code, which stays correct.
-        let old_name_of: std::collections::HashMap<u64, &str> = self
-            .cache
-            .symbols
-            .by_name
-            .iter()
-            .filter(|(_, s)| s.address != 0)
-            .map(|(n, s)| (s.address, n.as_str()))
-            .collect();
+        // DX-PARITY FULL MAP: every name-overlap Text symbol maps old -> new.
+        // (build_jump_table_lean only emits old addresses that exist in the old
+        // table, so this is just an O(1) address bound-check against the
+        // precomputed set — NOT a rebuild or a per-entry scan.)
+        let start_map = std::time::Instant::now();
         let before = plan.table.map.len();
         plan.table.map = plan
             .table
             .map
             .into_iter()
-            .filter(|(k, _)| {
-                old_name_of.get(k).map(|_| true).unwrap_or(false)
-            })
+            .filter(|(k, _)| self.valid_old.contains(k))
             .collect();
-        tracing::info!(before = before, after = plan.table.map.len(), "jump table filtered");
-        // DX-PARITY FULL MAP: every name-overlap Text symbol maps old -> new,
-        // NO name filter. This is exactly Dioxus's create_native_jump_table.
-        // (Unsafe only if stubs mis-address the host binary — we anchor stubs
-        // on `main` like apply_patch, so unchanged code is untouched.)
-        let before = plan.table.map.len();
-        plan.table.map = plan
-            .table
-            .map
-            .into_iter()
-            .filter(|(k, _)| self.cache.symbols.by_name.values().any(|s| s.address == *k && !s.is_undefined))
-            .collect();
-        tracing::info!(before = before, after = plan.table.map.len(), "DX FULL MAP (no filter)");
+        tracing::info!(before = before, after = plan.table.map.len(), map_ms = start_map.elapsed().as_millis(), "DX FULL MAP (no filter)");
 
-        // DIAGNOSTIC: is paint_cube present        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?
+        // DIAGNOSTIC: is paint_cube / rotate present in old/new and mapped?
         for pat in ["paint_cube", "rotate"] {
             let old_present = self.cache.symbols.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);
             let new_present = new_syms.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);
@@ -234,7 +210,8 @@ impl PatchSession {
                 .any(|(_, s)| plan.table.map.contains_key(&s.address));
             tracing::info!(name = %pat, old_present = old_present, new_present = new_present, mapped_oldaddr_in_table = mapped, "DIAG");
         }
-        tracing::info!(added = ?plan.report.added, removed = ?plan.report.removed, "patch diff");
+        tracing::info!(added_n = plan.report.added.len(), weak_n = plan.report.weak.len(), "patch diff");
+
         Ok((plan.table, patch_path))
     }
 }
@@ -328,5 +305,61 @@ fn arm64_jump_stub(addr: u64) -> Vec<u8> {
     }
     code.extend_from_slice(&0xD61F_0200u32.to_le_bytes()); // BR X16
     code
+}
+
+/// Like whisker's `build_jump_table`, but WITHOUT the O(old_table) "removed"
+/// report pass (700k+ symbol keys walked + sorted every patch, for a message
+/// nobody reads). The mapping itself is identical.
+fn build_jump_table_lean(
+    old: &whisker_dev_server::hotpatch::SymbolTable,
+    new: &whisker_dev_server::hotpatch::SymbolTable,
+    new_lib: std::path::PathBuf,
+    aslr_reference: u64,
+    new_base_address: u64,
+) -> whisker_dev_server::hotpatch::PatchPlan {
+    use object::SymbolKind;
+    let mut map = subsecond_types::AddressMap::default();
+    let mut added: Vec<String> = Vec::new();
+    let mut weak: Vec<String> = Vec::new();
+
+    for (name, new_sym) in &new.by_name {
+        let old_sym = match old.by_name.get(name) {
+            Some(s) => s,
+            None => {
+                added.push(name.clone());
+                continue;
+            }
+        };
+        // Only hot-patch code, defined, addressable, sized.
+        if !matches!(old_sym.kind, SymbolKind::Text)
+            || !matches!(new_sym.kind, SymbolKind::Text)
+        {
+            continue;
+        }
+        if old_sym.is_undefined || new_sym.is_undefined || old_sym.address == 0 || new_sym.address == 0 {
+            continue;
+        }
+        if old_sym.is_weak || new_sym.is_weak {
+            weak.push(name.clone());
+        }
+        map.insert(old_sym.address, new_sym.address);
+    }
+    added.sort();
+    weak.sort();
+
+    whisker_dev_server::hotpatch::PatchPlan {
+        table: subsecond_types::JumpTable {
+            lib: new_lib,
+            map,
+            aslr_reference,
+            new_base_address,
+            ifunc_count: 0,
+        },
+        report: whisker_dev_server::hotpatch::DiffReport {
+            added,
+            removed: Vec::new(),
+            weak,
+        },
+    }
 }
 

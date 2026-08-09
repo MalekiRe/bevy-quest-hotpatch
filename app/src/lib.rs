@@ -23,7 +23,7 @@ fn run_app() {
         .add_systems(Startup, setup)
         .with_hot_patch(|app| {
             // ANY schedules — built-in or custom — are hot-swapped automatically.
-            app.add_systems(Update, (rotate, alive_tick, paint_cube));
+            app.add_systems(Update, (rotate, resize_cube, alive_tick, paint_cube));
             app.add_systems(FixedUpdate, fixed_probe);
             app.add_systems(Last, last_probe);
             app.add_systems(MyCustomSchedule, custom_probe);
@@ -87,7 +87,7 @@ fn setup(
 
 fn rotate(time: Res<Time>, mut q: Query<&mut Transform, With<Rotator>>) {
     for mut t in &mut q {
-        t.rotate_y(0.06 * time.delta_secs());
+        t.rotate_y(1.2 * time.delta_secs()); // <<< FASTER (was 0.06)
     }
 }
 
@@ -117,7 +117,7 @@ fn paint_cube(
 
 /// In FixedUpdate (mirror): bump this marker to prove FixedUpdate is hot too.
 fn fixed_probe(mut last: Local<u32>) {
-    let marker: u32 = 4; // <<< LIVE fixed 4
+    let marker: u32 = 8; // <<< LIVE fixed 8
     if *last != marker {
         *last = marker;
         info!("FIXED-PROBE marker={marker}");
@@ -152,4 +152,10 @@ fn custom_probe(mut last: Local<u32>) {
         *last = marker;
         info!("CUSTOM-PROBE marker={marker}");
     }
+}
+
+/// New hot system: shrink the cube (edit the scale to see it live).
+fn resize_cube(mut q: Query<&mut Transform, With<Cube>>) {
+    let scale = 0.1; // <<< SMALLER (was 1.0)
+    for mut t in &mut q { t.scale = Vec3::splat(scale); }
 }
