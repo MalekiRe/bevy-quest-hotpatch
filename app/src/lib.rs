@@ -104,7 +104,7 @@ fn paint_cube(
     mut materials: ResMut<Assets<StandardMaterial>>,
     q: Query<&MeshMaterial3d<StandardMaterial>, With<Cube>>,
 ) {
-    let new_color = Color::srgb(0.0, 1.0, 0.0); // <<< LIVE GREEN
+    let new_color = Color::srgb(0.0, 0.0, 1.0); // <<< LIVE GREEN
     if let Some(h) = q.iter().next() {
         if let Some(mut m) = materials.get_mut(h.id()) {
             if m.base_color != new_color {
@@ -156,6 +156,6 @@ fn custom_probe(mut last: Local<u32>) {
 
 /// New hot system: shrink the cube (edit the scale to see it live).
 fn resize_cube(mut q: Query<&mut Transform, With<Cube>>) {
-    let scale = 0.1; // <<< SMALLER (was 1.0)
+    let scale = 0.2; // <<< SMALLER (was 1.0)
     for mut t in &mut q { t.scale = Vec3::splat(scale); }
 }
