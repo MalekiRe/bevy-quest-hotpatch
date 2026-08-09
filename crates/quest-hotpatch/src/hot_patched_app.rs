@@ -1,21 +1,42 @@
-//! API for hot-patching new systems into your running app.
-//! See [`HotPatchedAppExt::with_hot_patch`] for the main API.
-
-use crate::__macros_internal::__ReloadPositions as ReloadPositions;
-use bevy_app::{
-    App, First, FixedLast, FixedMain, FixedPostUpdate, FixedPreUpdate, FixedUpdate, Last,
-    PostStartup, PostUpdate, PreStartup, PreUpdate, Startup, Update,
-};
-use bevy_derive::{Deref, DerefMut};
-#[cfg(debug_assertions)]
-use bevy_ecs::system::{Commands, Res};
-use bevy_ecs::{prelude::*, system::NonSendMarker};
-use bevy_ecs_macros::ScheduleLabel;
-use bevy_log::{debug, error};
+//! API for hot-patching new systems into your running app — **fully generic over
+//! every schedule**. [`HotPatchedAppExt::with_hot_patch`] takes a closure that can
+//! add systems to *any* schedules (built-in or custom, no hardcoded list). On each
+//! hot-reload the closure re-runs on a fresh app; every schedule it populated gets
+//! (1) a proxy inside the real schedule and (2) a mirror schedule that owns its
+//! systems, so bevy's own systems in the real schedules are never disturbed.
+//!
+//! Mirrors are pre-created on demand from a pool of 1,000 distinct labels
+//! (`HotPatchIdx(0)..HotPatchIdx(999)`), assigned to schedules as they appear.
 
 use crate::HotPatched;
+use bevy_app::{App, PreUpdate};
+use bevy_derive::{Deref, DerefMut};
+use bevy_ecs::prelude::*;
+use bevy_ecs::schedule::{InternedScheduleLabel, Schedule, ScheduleGraph, Schedules};
+use bevy_ecs::system::{NonSend, NonSendMarker};
+use bevy_ecs_macros::ScheduleLabel;
+use bevy_log::{debug, error};
+use dioxus_devtools::subsecond::HotFn;
+use std::collections::{HashMap, HashSet};
+use std::sync::Mutex;
 
-/// Wrapper around [`App`] used by [`HotPatchedAppExt::with_hot_patch`], which allows you to add and remove systems at runtime.
+/// Runtime pool of mirror schedule labels. Every distinct value is a distinct,
+/// internally-interned schedule label, so values `0..999` give us 1,000
+/// pre-creatable mirrors for (up to) 1,000 target schedules.
+#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash, Default)]
+struct HotPatchIdx(u32);
+
+/// Per-`with_hot_patch` bookkeeping: which target schedule owns which mirror
+/// index, and which schedules already have a proxy wired.
+#[derive(Default)]
+struct HotPatchState {
+    next: u32,
+    map: HashMap<InternedScheduleLabel, u32>,
+    proxied: HashSet<InternedScheduleLabel>,
+}
+
+/// Wrapper around [`App`] used by [`HotPatchedAppExt::with_hot_patch`], kept
+/// thread-safe so it can be dispatched through subsecond.
 #[derive(Deref, DerefMut)]
 struct HotPatchedApp(send_wrapper::SendWrapper<App>);
 
@@ -25,105 +46,28 @@ impl Default for HotPatchedApp {
     }
 }
 
-/// The [`Startup`] schedule, but rerun on hot-reload.
-/// Only valid inside the context of [`HotPatchedAppExt::with_hot_patch`].
-#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash, Default)]
-pub struct StartupRerunHotPatch;
-
-/// One mirror schedule per hot-patchable schedule: the *real* schedule keeps
-/// bevy's systems (and a proxy that runs the mirror), so whole-schedule
-/// replacement can never drop bevy's internals.
-macro_rules! hot_patch_mirrors {
-    ($($label:ident => $mirror:ident),* $(,)?) => {
-        $(
-            #[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash, Default)]
-            struct $mirror;
-        )*
-    }
-}
-hot_patch_mirrors!(
-    First        => HotPatchFirst,
-    PreUpdate    => HotPatchPreUpdate,
-    Update       => HotPatchUpdate,
-    PostUpdate   => HotPatchPostUpdate,
-    Last         => HotPatchLast,
-    FixedMain    => HotPatchFixedMain,
-    FixedPreUpdate => HotPatchFixedPreUpdate,
-    FixedUpdate  => HotPatchFixedUpdate,
-    FixedPostUpdate => HotPatchFixedPostUpdate,
-    FixedLast    => HotPatchFixedLast,
-);
-
 /// Trait for [`App`] to add and remove systems at runtime.
 pub trait HotPatchedAppExt {
-    /// Call this with plugins and systems and it will auto-add and remove systems in the `Update` schedule to your running app.
+    /// Register systems that can be swapped in/out without restarting the app.
     ///
-    /// # Example
+    /// The closure may add systems to **any** schedule — built-in or custom:
     ///
     /// ```ignore
-    /// # use bevy::prelude::*;
-    /// # use quest_hotpatch::prelude::*;
-    ///
     /// App::new()
     ///     .add_plugins(DefaultPlugins)
     ///     .add_plugins(SimpleSubsecondPlugin::default())
     ///     .with_hot_patch(|app: &mut App| {
-    ///         // Systems in the `StartupRerunHotPatch` schedule will be rerun on hot-reload.
-    ///         // They require `#[hot(hot_patch_signature = true)]`
-    ///         app.add_systems(StartupRerunHotPatch, setup);
-    ///         // All other systems do not require `#[hot]`.
     ///         app.add_systems(Update, my_system);
-    ///         app.add_systems(PostUpdate, second_system);
-    ///     });
-    ///
-    /// #[hot(hot_patch_signature = true)]
-    /// fn setup(mut commands: Commands) {
-    ///     commands.spawn(Camera2d::default());
-    ///     commands.spawn(Text::new("Hello, world!"));
-    /// }
-    ///
-    /// fn my_system() {
-    ///     info!("Hello, world!");
-    /// }
-    ///
-    /// fn second_system() {
-    ///     info!("Goodbye, world!");
-    /// }
+    ///         app.add_systems(FixedUpdate, fixed_system);
+    ///         app.add_systems(Last, final_system);
+    ///         app.add_systems(MyCustomSchedule, custom_system);
+    ///     })
+    ///     .run();
     /// ```
+    ///
+    /// Each schedule used by the closure gets a mirror schedule (from a pool of
+    /// 1,000) plus a proxy in the real schedule, and is hot-swapped on reload.
     fn with_hot_patch(&mut self, func: impl FnMut(&mut App) + Send + Sync + 'static) -> &mut App;
-}
-
-/// Swap the fresh graph of schedule `L` into its mirror `M` (creating/replacing
-/// the mirror schedule). The running schedule `L` is untouched apart from its
-/// proxy, so bevy's own systems survive.
-fn swap_into_mirror<L, M>(
-    reload_schedules: &mut Schedules,
-    schedules: &mut Schedules,
-    commands: &mut Commands,
-    log_name: &'static str,
-) where
-    L: bevy_ecs::schedule::ScheduleLabel + Default,
-    M: bevy_ecs::schedule::ScheduleLabel + Default,
-{
-    let Some(mut fresh) = reload_schedules.remove(L::default()) else {
-        return;
-    };
-    if fresh.systems_len() == 0 {
-        return;
-    }
-    schedules.remove(M::default());
-    let hot = schedules.entry(M::default());
-    *hot.graph_mut() = std::mem::take(fresh.graph_mut());
-    // NB: the cached system must be a ZST (bevy const-asserts size_of::<S>() == 0),
-    // so it cannot capture `log_name`; keep it capture-free and log outside.
-    commands.run_system_cached(|world: &mut World| {
-        world.schedule_scope(M::default(), |world, schedule| {
-            if let Err(e) = schedule.initialize(world) {
-                error!("with_hot_patch: failed to initialize a hot mirror");
-            }
-        });
-    });
-    debug!("with_hot_patch: swapped {log_name} mirror");
 }
 
 impl HotPatchedAppExt for App {
@@ -131,80 +75,24 @@ impl HotPatchedAppExt for App {
         &mut self,
         mut func: impl FnMut(&mut App) + Send + Sync + 'static,
     ) -> &mut App {
-        let mut app = App::new();
-        app.init_schedule(Startup);
-        app.init_schedule(PostStartup);
-        app.init_schedule(PreStartup);
-        // Ensure the real App has them too — on some plugin orders these aren't
-        // registered yet, and the `.unwrap()` below would panic at startup.
-        self.init_schedule(Startup);
-        self.init_schedule(PostStartup);
-        self.init_schedule(PreStartup);
-        std::mem::swap(
-            app.get_schedule_mut(Startup).unwrap(),
-            self.get_schedule_mut(Startup).unwrap(),
-        );
-        std::mem::swap(
-            app.get_schedule_mut(PreStartup).unwrap(),
-            self.get_schedule_mut(PreStartup).unwrap(),
-        );
-        std::mem::swap(
-            app.get_schedule_mut(PostStartup).unwrap(),
-            self.get_schedule_mut(PostStartup).unwrap(),
-        );
-
-        func(&mut app);
-
-        std::mem::swap(
-            app.get_schedule_mut(Startup).unwrap(),
-            self.get_schedule_mut(Startup).unwrap(),
-        );
-        std::mem::swap(
-            app.get_schedule_mut(PreStartup).unwrap(),
-            self.get_schedule_mut(PreStartup).unwrap(),
-        );
-        std::mem::swap(
-            app.get_schedule_mut(PostStartup).unwrap(),
-            self.get_schedule_mut(PostStartup).unwrap(),
-        );
-
-        // A proxy per hot-patchable schedule: runs the mirror right where the
-        // real schedule runs, so hot systems get the same ordering/context.
-        macro_rules! add_proxy {
-            ($label:ty => $mirror:ty) => {
-                self.add_systems(<$label>::default(), move |world: &mut World| {
-                    let _ = world.try_run_schedule(<$mirror>::default());
-                });
-            };
-        }
-        add_proxy!(First => HotPatchFirst);
-        add_proxy!(PreUpdate => HotPatchPreUpdate);
-        add_proxy!(Update => HotPatchUpdate);
-        add_proxy!(PostUpdate => HotPatchPostUpdate);
-        add_proxy!(Last => HotPatchLast);
-        add_proxy!(FixedMain => HotPatchFixedMain);
-        add_proxy!(FixedPreUpdate => HotPatchFixedPreUpdate);
-        add_proxy!(FixedUpdate => HotPatchFixedUpdate);
-        add_proxy!(FixedPostUpdate => HotPatchFixedPostUpdate);
-        add_proxy!(FixedLast => HotPatchFixedLast);
-
-        self.add_systems(Startup, |world: &mut World| {
-            world.insert_resource(ReloadPositions::default());
-        });
-
-        let hot_patched_func = move |mut hot_patched_app: HotPatchedApp| -> HotPatchedApp {
+        // The closure is dispatched through the subsecond jump table, so a re-run
+        // executes the *newest* build of the closure (and the freshly compiled
+        // system bodies it registers).
+        let reload = move |mut hot_patched_app: HotPatchedApp| -> HotPatchedApp {
             func(&mut hot_patched_app.0);
             hot_patched_app
         };
-        let reloadable_section =
-            std::sync::Mutex::new(dioxus_devtools::subsecond::HotFn::current(hot_patched_func));
+        let reloadable = Mutex::new(HotFn::current(reload));
+        let state = Mutex::new(HotPatchState::default());
+
         self.add_systems(
             PreUpdate,
             move |_: Option<NonSend<NonSendMarker>>,
                   mut ran_once: Local<bool>,
                   mut schedules: ResMut<Schedules>,
-                  mut commands: Commands,
                   hotreload_event: MessageReader<HotPatched>| {
+                // Run once at startup to install the initial schedules, and again
+                // on every hot-reload (when a `HotPatched` event exists).
                 if hotreload_event.is_empty() {
                     if *ran_once {
                         return;
@@ -212,86 +100,71 @@ impl HotPatchedAppExt for App {
                     *ran_once = true;
                 }
 
-                let reload_app = reloadable_section
+                let mut reload_app = match reloadable
                     .lock()
                     .unwrap()
-                    .try_call((HotPatchedApp::default(),));
-
-                let mut reload_app = match reload_app {
-                    Ok(reload_app) => reload_app,
+                    .try_call((HotPatchedApp::default(),))
+                {
+                    Ok(app) => app,
                     Err(e) => {
-                        error!("Failed to call hotpatch function: {e:?}");
+                        error!("with_hot_patch: hotpatch function failed: {e:?}");
                         return;
                     }
                 };
 
-                let mut reload_schedules = reload_app
-                    .world_mut()
-                    .get_resource_mut::<Schedules>()
-                    .unwrap();
-
-                swap_into_mirror::<First, HotPatchFirst>(&mut reload_schedules, &mut schedules, &mut commands, "First");
-                swap_into_mirror::<PreUpdate, HotPatchPreUpdate>(&mut reload_schedules, &mut schedules, &mut commands, "PreUpdate");
-                swap_into_mirror::<Update, HotPatchUpdate>(&mut reload_schedules, &mut schedules, &mut commands, "Update");
-                swap_into_mirror::<PostUpdate, HotPatchPostUpdate>(&mut reload_schedules, &mut schedules, &mut commands, "PostUpdate");
-                swap_into_mirror::<Last, HotPatchLast>(&mut reload_schedules, &mut schedules, &mut commands, "Last");
-                swap_into_mirror::<FixedMain, HotPatchFixedMain>(&mut reload_schedules, &mut schedules, &mut commands, "FixedMain");
-                swap_into_mirror::<FixedPreUpdate, HotPatchFixedPreUpdate>(&mut reload_schedules, &mut schedules, &mut commands, "FixedPreUpdate");
-                swap_into_mirror::<FixedUpdate, HotPatchFixedUpdate>(&mut reload_schedules, &mut schedules, &mut commands, "FixedUpdate");
-                swap_into_mirror::<FixedPostUpdate, HotPatchFixedPostUpdate>(&mut reload_schedules, &mut schedules, &mut commands, "FixedPostUpdate");
-                swap_into_mirror::<FixedLast, HotPatchFixedLast>(&mut reload_schedules, &mut schedules, &mut commands, "FixedLast");
-
-                if let Some(mut auto_reload_startup) = reload_schedules.remove(StartupRerunHotPatch)
+                // Harvest every schedule the closure populated (the fresh app starts
+                // empty, so anything with systems here came from the closure).
+                let mut populated: Vec<(InternedScheduleLabel, ScheduleGraph)> = Vec::new();
                 {
-                    schedules.remove(StartupRerunHotPatch);
-                    let schedule: &mut Schedule = schedules.entry(StartupRerunHotPatch);
-                    *schedule.graph_mut() = std::mem::take(auto_reload_startup.graph_mut());
-                    commands.run_system_cached(|world: &mut World| {
-                        world.schedule_scope(StartupRerunHotPatch, |world, auto_reload_startup| {
-                            let result = auto_reload_startup.initialize(world);
-                            if let Err(e) = result {
-                                error!("Failed to initialize hotpatch auto_reload_startup: {e}");
-                            }
-                        });
-                    });
-
-                    commands.run_system_cached(
-                        |mut commands: Commands,
-                         query: Query<Entity>,
-                         reload_positions: Res<ReloadPositions>,
-                         world: &World| {
-                            for e in query.iter() {
-                                let Some(location) = world
-                                    .entities()
-                                    .entity_get_spawned_or_despawned_by(e)
-                                    .into_option()
-                                else {
-                                    continue;
-                                };
-                                let Some(location) = location else { continue };
-                                for (file, line_start, line_end) in reload_positions.iter() {
-                                    if location.file() != *file {
-                                        continue;
-                                    }
-                                    if location.line() > *line_start && location.line() < *line_end
-                                    {
-                                        debug!("despawning an entity at: {location:?}");
-                                        commands.entity(e.entity()).despawn();
-                                    }
-                                }
-                            }
-                        },
-                    );
-                    commands.run_system_cached(|world: &mut World| {
-                        // we clear our reload positions every time so we can fill them up with new stuff.
-                        world.insert_resource(ReloadPositions::default());
-                        if let Err(e) = world.try_run_schedule(StartupRerunHotPatch) {
-                            error!("Failed to auto-reload startup: {e:?}");
+                    let mut rs = reload_app
+                        .world_mut()
+                        .get_resource_mut::<Schedules>()
+                        .unwrap();
+                    for (_, schedule) in rs.iter_mut() {
+                        if schedule.systems_len() > 0 {
+                            populated.push((schedule.label(), std::mem::take(schedule.graph_mut())));
                         }
-                    })
+                    }
+                }
+
+                let mut state = state.lock().unwrap();
+                for (label_id, graph) in populated {
+                    if state.next >= 1000 {
+                        error!(
+                            "with_hot_patch: exceeded 1000 hot schedules; skipping {:?}",
+                            label_id
+                        );
+                        continue;
+                    }
+                    // Assign a mirror index the first time we see this schedule.
+                    let idx = match state.map.get(&label_id) {
+                        Some(&i) => i,
+                        None => {
+                            let i = state.next;
+                            state.next += 1;
+                            state.map.insert(label_id, i);
+                            i
+                        }
+                    };
+                    // First sight: add a proxy inside the REAL schedule that ticks
+                    // the mirror, so the user's systems run exactly where `add_systems`
+                    // put them — with bevy's own systems untouched.
+                    if state.proxied.insert(label_id) {
+                        schedules.add_systems(label_id, move |world: &mut World| {
+                            let _ = world.try_run_schedule(HotPatchIdx(idx));
+                        });
+                        debug!("with_hot_patch: wired proxy for schedule #{idx}");
+                    }
+                    // (Re)install the mirror with the fresh graph. `Schedule::run`
+                    // re-initializes lazily when the graph changes, so no manual
+                    // re-init is needed.
+                    let mut mirror = Schedule::new(HotPatchIdx(idx));
+                    *mirror.graph_mut() = graph;
+                    schedules.insert(mirror);
                 }
             },
         );
+
         self
     }
 }

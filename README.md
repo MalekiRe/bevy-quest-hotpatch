@@ -122,8 +122,9 @@ fn probe(time: Res<Time>, mut last: Local<f32>) {
 ### 2. `with_hot_patch`
 
 Register systems inside the closure; it re-runs on each patch and hot-swaps them into the running
-app. No macro needed. Works in **every standard schedule** (First, PreUpdate, Update, PostUpdate,
-Last, FixedPreUpdate, FixedUpdate, FixedPostUpdate, FixedLast):
+app. No macro needed, and **no hardcoded schedule list**: the closure can use *any* schedule
+(built-in or custom). Each schedule it touches gets a mirror (from a pool of 1,000) plus a proxy in
+the real schedule, discovered and wired at runtime:
 
 ```rust
 App::new()

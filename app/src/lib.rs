@@ -8,6 +8,7 @@
 //! fresh function pointer, and rebuilds the schedule. After that the system runs
 //! DIRECTLY (no per-frame table consult). Edit `paint_cube`'s body to recolor live.
 
+use bevy::ecs::schedule::ScheduleLabel;
 use bevy::prelude::*;
 use bevy::window::WindowPlugin;
 use quest_hotpatch::prelude::*;
@@ -21,11 +22,13 @@ fn run_app() {
         .add_plugins(SimpleSubsecondPlugin::default())
         .add_systems(Startup, setup)
         .with_hot_patch(|app| {
-            // THREE schedules at once: Update, FixedUpdate, Last — all hot.
+            // ANY schedules — built-in or custom — are hot-swapped automatically.
             app.add_systems(Update, (rotate, alive_tick, paint_cube));
             app.add_systems(FixedUpdate, fixed_probe);
             app.add_systems(Last, last_probe);
+            app.add_systems(MyCustomSchedule, custom_probe);
         })
+        .add_systems(Update, run_custom)
         .run();
 }
 
@@ -114,7 +117,7 @@ fn paint_cube(
 
 /// In FixedUpdate (mirror): bump this marker to prove FixedUpdate is hot too.
 fn fixed_probe(mut last: Local<u32>) {
-    let marker: u32 = 3; // <<< LIVE2 fixed marker
+    let marker: u32 = 4; // <<< LIVE fixed 4
     if *last != marker {
         *last = marker;
         info!("FIXED-PROBE marker={marker}");
@@ -123,9 +126,30 @@ fn fixed_probe(mut last: Local<u32>) {
 
 /// In Last (mirror): bump this marker to prove Last is hot too.
 fn last_probe(mut last: Local<u32>) {
-    let marker: u32 = 3; // <<< LIVE2 last marker
+    let marker: u32 = 4; // <<< LIVE last 4
     if *last != marker {
         *last = marker;
         info!("LAST-PROBE marker={marker}");
+    }
+}
+
+// ---------------------------------------------------------------------------
+// CUSTOM schedule (bevy knows nothing about it) — proof with_hot_patch has no
+// hardcoded schedule list: anything added in the closure gets mirrored.
+// ---------------------------------------------------------------------------
+#[derive(ScheduleLabel, Clone, Debug, PartialEq, Eq, Hash, Default)]
+struct MyCustomSchedule;
+
+/// Ticks the custom schedule every frame (from live Update, untouched by hotpatch).
+fn run_custom(world: &mut World) {
+    let _ = world.try_run_schedule(MyCustomSchedule);
+}
+
+/// Lives ONLY in the custom schedule's mirror: bump this marker live.
+fn custom_probe(mut last: Local<u32>) {
+    let marker: u32 = 2; // <<< LIVE custom 2
+    if *last != marker {
+        *last = marker;
+        info!("CUSTOM-PROBE marker={marker}");
     }
 }
