@@ -28,8 +28,18 @@ fn run_app() {
 #[cfg(target_os = "android")]
 #[unsafe(no_mangle)]
 extern "C" fn android_main(android_app: bevy::android::android_activity::AndroidApp) {
+    // Dioxus disables MTE in dev deps to avoid stale-tag crashes on data races
+    // that are harmless without tag checking (our demo races StandardMaterial).
+    unsafe { prctl(PR_SET_TAGGED_ADDR_CTRL, 0, 0, 0, 0) };
     let _ = bevy::android::ANDROID_APP.set(android_app);
     run_app();
+}
+
+#[cfg(target_os = "android")]
+const PR_SET_TAGGED_ADDR_CTRL: std::ffi::c_int = 55;
+#[cfg(target_os = "android")]
+unsafe extern "C" {
+    fn prctl(option: std::ffi::c_int, arg2: std::ffi::c_ulong, arg3: std::ffi::c_ulong, arg4: std::ffi::c_ulong, arg5: std::ffi::c_ulong) -> std::ffi::c_int;
 }
 
 #[cfg(target_os = "android")]
@@ -87,7 +97,7 @@ fn rotate(time: Res<Time>, mut q: Query<&mut Transform, With<Rotator>>) {
 /// the call through subsecond's jump table).
 #[hot]
 fn desired_color() -> Color {
-    Color::srgb(0.0, 0.0, 1.0) // <<< BLUE baseline. Patch me to RED.
+    Color::srgb(0.0, 0.0, 1.0) // <<< patched-no-dispatch
 }
 
 // =============================================================================
@@ -96,7 +106,7 @@ fn desired_color() -> Color {
 // =============================================================================
 #[hot]
 fn hot_flag() -> u32 {
-    0 // <<< baseline. Patch me to 1 and watch the log.
+    12 // <<< race-free v2 test
 }
 
 fn alive_tick(time: Res<Time>, mut last_t: Local<f32>) {
@@ -120,9 +130,17 @@ fn paint_cube(
     mut materials: ResMut<Assets<StandardMaterial>>,
     q: Query<&MeshMaterial3d<StandardMaterial>, With<Cube>>,
 ) {
+    // Race-free: convert the hot color to a tagless LinearRgba ONCE and write
+    // only when it changes. Writing a raw `Color` every frame races the render
+    // thread's asset prep (torn enum discriminant -> indexed-branch OOB).
     if let Some(h) = q.iter().next().map(|h| h.0.clone()) {
-        if let Some(mut m) = materials.get_mut(h.id()) {
-            m.base_color = desired_color();
+        let Some(mut m) = materials.get_mut(h.id()) else { return };
+        // Write only when the color actually changes (once per hot patch): a
+        // per-frame 20-byte write races the render thread's asset prep.
+        let target = desired_color();
+        if m.base_color != target {
+            m.base_color = target;
         }
     }
 }
+// thinlink-capture-v2 (1786236363457888709)

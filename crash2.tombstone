@@ -1,0 +1,90 @@
+--------- beginning of crash
+08-08 20:59:51.097 18553 18583 F libc    : Fatal signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x7dd74cd778 in tid 18583 (Compute Task Po), pid 18553 (k.questhotpatch)
+08-08 20:59:51.404 18646 18646 F DEBUG   : *** *** *** *** *** *** *** *** *** *** *** *** *** *** *** ***
+08-08 20:59:51.404 18646 18646 F DEBUG   : Build fingerprint: 'samsung/e3qsqw/e3q:16/BP4A.251205.006/S928USQS6DZG1:user/release-keys'
+08-08 20:59:51.404 18646 18646 F DEBUG   : Kernel Release: '6.1.145-android14-11-33419968-abS928USQS6DZG1'
+08-08 20:59:51.404 18646 18646 F DEBUG   : Revision: '12'
+08-08 20:59:51.404 18646 18646 F DEBUG   : ABI: 'arm64'
+08-08 20:59:51.404 18646 18646 F DEBUG   : Processor: '0'
+08-08 20:59:51.404 18646 18646 F DEBUG   : Timestamp: 2026-08-08 20:59:51.200848763-0400
+08-08 20:59:51.404 18646 18646 F DEBUG   : Process uptime: 31s
+08-08 20:59:51.404 18646 18646 F DEBUG   : Executable: /system/bin/app_process64
+08-08 20:59:51.404 18646 18646 F DEBUG   : Cmdline: dev.malek.questhotpatch
+08-08 20:59:51.404 18646 18646 F DEBUG   : pid: 18553, tid: 18583, name: Compute Task Po  >>> dev.malek.questhotpatch <<<
+08-08 20:59:51.404 18646 18646 F DEBUG   : uid: 10025
+08-08 20:59:51.404 18646 18646 F DEBUG   : tagged_addr_ctrl: 0000000000000001 (PR_TAGGED_ADDR_ENABLE)
+08-08 20:59:51.404 18646 18646 F DEBUG   : pac_enabled_keys: 000000000000000f (PR_PAC_APIAKEY, PR_PAC_APIBKEY, PR_PAC_APDAKEY, PR_PAC_APDBKEY)
+08-08 20:59:51.404 18646 18646 F DEBUG   : esr: 0000000092000006 (Data Abort Exception 0x24)
+08-08 20:59:51.404 18646 18646 F DEBUG   : signal 11 (SIGSEGV), code 2 (SEGV_ACCERR), fault addr 0x0000007dd74cd778 (read)
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x0  0000007b003d2650  x1  0000000000000003  x2  0000007b10807818  x3  0000000000000010
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x4  0000007b003d4ce0  x5  0000007b003d4c78  x6  0000000000000000  x7  00000000ffffffff
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x8  0000007b0fc1889c  x9  0000007b003d91bc  x10 0000007b074cd584  x11 00000000b400007d
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x12 0000000000000000  x13 0000000000000001  x14 0000000000000001  x15 0000000000000001
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x16 0000007b10ba85e0  x17 0000007eab0b4064  x18 0000007a7be24000  x19 b400007cc71c4f70
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x20 b400007ca71886e0  x21 0000007b10b2a748  x22 b400007cb71f4fd0  x23 0000007b10be9d68
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x24 0000007b003df140  x25 0000007b003df4a8  x26 0000000000204000  x27 0000007b001db000
+08-08 20:59:51.404 18646 18646 F DEBUG   :     x28 000000000020c000  x29 0000007b003d24b0
+08-08 20:59:51.404 18646 18646 F DEBUG   :     lr  0000007b0c4c0fdc  sp  0000007b003d2360  pc  0000007b0fc188a0  pst 0000000080001000
+08-08 20:59:51.404 18646 18646 F DEBUG   :     esr 0000000092000006
+08-08 20:59:51.404 18646 18646 F DEBUG   : 60 total frames
+08-08 20:59:51.404 18646 18646 F DEBUG   : backtrace:
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #00 pc 00000000095c58a0  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #01 pc 0000000005e6dfd8  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (_$LT$bevy_pbr..pbr_material..StandardMaterial$u20$as$u20$bevy_render..render_resource..bind_group..AsBindGroupShaderType$LT$bevy_pbr..pbr_material..StandardMaterialUniform$GT$$GT$::as_bind_group_shader_type::hfa2c9c83ce51c46a+1020)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #02 pc 0000000005e65780  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (_$LT$bevy_pbr..pbr_material..StandardMaterial$u20$as$u20$bevy_render..render_resource..bind_group..AsBindGroup$GT$::unprepared_bind_group::h5c03587704a9be47+10872)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #03 pc 0000000005d201cc  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (bevy_pbr::material::_$LT$impl$u20$bevy_render..erased_render_asset..ErasedRenderAsset$u20$for$u20$bevy_pbr..mesh_material..MeshMaterial3d$LT$M$GT$$GT$::prepare_asset::hb8e3e293bf008303+544)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #04 pc 0000000005b728e4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (bevy_render::erased_render_asset::prepare_erased_assets::hf9505d3bb6f67e7b+2672)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #05 pc 0000000005c2f440  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (core::ops::function::FnMut::call_mut::hb1c48f4c34e731c6+176)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #06 pc 0000000005b8643c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (core::ops::function::impls::_$LT$impl$u20$core..ops..function..FnMut$LT$A$GT$$u20$for$u20$$RF$mut$u20$F$GT$::call_mut::h44b986ca5024f8b9+184)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #07 pc 00000000054fb95c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (_$LT$Func$u20$as$u20$bevy_ecs..system..function_system..SystemParamFunction$LT$fn$LP$F0$C$F1$C$F2$C$F3$C$F4$RP$$u20$.$GT$$u20$Out$GT$$GT$::run::call_inner::h8541bff6bd34e918+180)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #08 pc 0000000005b791a8  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (_$LT$Func$u20$as$u20$bevy_ecs..system..function_system..SystemParamFunction$LT$fn$LP$F0$C$F1$C$F2$C$F3$C$F4$RP$$u20$.$GT$$u20$Out$GT$$GT$::run::h47eb5c2a5f53e3a3+284)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #09 pc 00000000054c8fa4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so (_$LT$bevy_ecs..system..function_system..FunctionSystem$LT$Marker$C$In$C$Out$C$F$GT$$u20$as$u20$bevy_ecs..system..system..System$GT$::run_unsafe::hd92ca657eeaa37e7+708)
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #10 pc 0000000009addf00  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #11 pc 0000000009b1e178  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #12 pc 0000000009ab5220  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #13 pc 0000000009b620d8  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #14 pc 0000000009b6a288  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #15 pc 0000000009a37394  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #16 pc 0000000009a17c10  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #17 pc 0000000009b1e074  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #18 pc 0000000009b5d554  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #19 pc 0000000009b048cc  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #20 pc 0000000009b62010  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #21 pc 0000000009b6a2cc  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #22 pc 0000000009a37394  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #23 pc 0000000009a18554  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #24 pc 0000000009b0470c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #25 pc 0000000009b04f30  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #26 pc 0000000009ae5f58  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #27 pc 0000000009ab74e4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #28 pc 0000000009b62238  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #29 pc 0000000009b6a728  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #30 pc 0000000009a37394  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #31 pc 0000000009a1860c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #32 pc 0000000009ae452c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #33 pc 0000000009bdf978  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #34 pc 0000000009bda928  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #35 pc 0000000009bd8d28  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #36 pc 0000000009bda5b0  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #37 pc 0000000009bdbf18  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.404 18646 18646 F DEBUG   :       #38 pc 0000000009bd4824  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #39 pc 0000000009bd72b4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #40 pc 0000000009bd6e2c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #41 pc 0000000009bd46a0  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #42 pc 0000000009bcf4d8  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #43 pc 0000000009bd1f20  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #44 pc 0000000009bd98d4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #45 pc 0000000009bd6c74  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #46 pc 0000000009bcf308  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #47 pc 0000000009bd7498  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #48 pc 0000000009bd6e8c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #49 pc 0000000009bcf174  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #50 pc 0000000009bdc39c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #51 pc 0000000009bc9ee4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #52 pc 0000000009bd44d4  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #53 pc 0000000009bd1e70  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #54 pc 0000000009bce784  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #55 pc 0000000009bc9c1c  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #56 pc 0000000009bca150  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #57 pc 0000000009fb8ce0  /data/app/~~4z1_OClYE20ldwyegtbi9w==/dev.malek.questhotpatch-_fGdo7xppdrJMNmtRsO58g==/lib/arm64/libquest_hotpatch_app.so
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #58 pc 00000000000865ac  /apex/com.android.runtime/lib64/bionic/libc.so (__pthread_start(void*) (.__uniq.67847048707805468364044055584648682506)+184) (BuildId: 1ec1d41f7c9e3e45043ebfef05c0ed3d)
+08-08 20:59:51.405 18646 18646 F DEBUG   :       #59 pc 0000000000078ecc  /apex/com.android.runtime/lib64/bionic/libc.so (__start_thread+68) (BuildId: 1ec1d41f7c9e3e45043ebfef05c0ed3d)
