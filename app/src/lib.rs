@@ -99,7 +99,7 @@ fn paint_cube(
     mut materials: ResMut<Assets<StandardMaterial>>,
     q: Query<&MeshMaterial3d<StandardMaterial>, With<Cube>>,
 ) {
-    let new_color = Color::srgb(0.0, 1.0, 0.0); // <<< live-patched to GREEN via with_hot_patch
+    let new_color = Color::srgb(0.0, 0.0, 1.0); // <<< BLUE via FULL MAP no-filter
     if let Some(h) = q.iter().next() {
         if let Some(mut m) = materials.get_mut(h.id()) {
             if m.base_color != new_color {

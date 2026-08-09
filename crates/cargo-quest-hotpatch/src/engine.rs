@@ -212,42 +212,20 @@ impl PatchSession {
             })
             .collect();
         tracing::info!(before = before, after = plan.table.map.len(), "jump table filtered");
-        // Map ONLY:
-        //   - the app's declared hot functions (--hot-funcs), and
-        //   - subsecond's dispatch trampolines (call_it / HotFunction), which the
-        //     runtime actually consults for #[hot] and with_hot_patch.
-        // Bevy's own indirect machinery (render/asset-prep monomorphs, FunctionSystem)
-        // stays out of the table entirely => no calling-convention/MTE crashes.
-        let keep = &self.hot_funcs;
-        let old_name_of: std::collections::HashMap<u64, &str> = self
-            .cache
-            .symbols
-            .by_name
-            .iter()
-            .map(|(n, s)| (s.address, n.as_str()))
-            .collect();
+        // DX-PARITY FULL MAP: every name-overlap Text symbol maps old -> new,
+        // NO name filter. This is exactly Dioxus's create_native_jump_table.
+        // (Unsafe only if stubs mis-address the host binary — we anchor stubs
+        // on `main` like apply_patch, so unchanged code is untouched.)
         let before = plan.table.map.len();
         plan.table.map = plan
             .table
             .map
             .into_iter()
-            .filter(|(k, _)| {
-                old_name_of
-                    .get(k)
-                    .map(|name| {
-                        keep.iter().any(|h| name.contains(h.as_str()))
-                            || name.contains("subsecond")
-                            || name.contains("call_it")
-                            || name.contains("HotFunction")
-                            || name.contains("with_hot_patch")
-                    })
-                    .unwrap_or(false)
-            })
+            .filter(|(k, _)| self.cache.symbols.by_name.values().any(|s| s.address == *k && !s.is_undefined))
             .collect();
-        tracing::info!(before = before, after = plan.table.map.len(), "hot+dispatch map");
+        tracing::info!(before = before, after = plan.table.map.len(), "DX FULL MAP (no filter)");
 
-
-        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?
+        // DIAGNOSTIC: is paint_cube present        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?        // DIAGNOSTIC: is paint_cube present in old/new and mapped old->new?
         for pat in ["paint_cube", "rotate"] {
             let old_present = self.cache.symbols.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);
             let new_present = new_syms.by_name.iter().any(|(n, s)| n.contains(pat) && s.address != 0);
@@ -262,31 +240,31 @@ impl PatchSession {
 }
 
 
-/// Full stub-object builder: trampolines for changed CODE symbols plus
-/// absolute-address definitions for host DATA symbols (statics/globals like
-/// `log::MAX_LOG_LEVEL_FILTER`), which upstream whisker skips. We classify
-/// code vs data ourselves from the original ELF's section flags.
+/// Full stub-object builder: trampolines for CODE symbols plus absolute-address
+/// definitions for DATA symbols (statics/globals like `log::MAX_LOG_LEVEL_FILTER`).
+/// Addresses come from `cache.symbols.by_name` — the SAME table that drives the
+/// (proven-correct) JumpTable — with the device ASLR slide applied. We do NOT
+/// re-parse the ELF here (a second, lossy pass produced stubs that jumped a few
+/// bytes off the real symbol -> SIGTRAP on `brk` landing pads).
 fn build_stub_full(cache: &HotpatchModuleCache, patch_obj: &std::path::Path, device_aslr: u64) -> Result<Vec<u8>> {
-    use object::{Object as _, ObjectSymbol as _};
     use object::write::{Object, StandardSection, Symbol, SymbolSection};
     use object::{Architecture, BinaryFormat, Endianness, SymbolFlags, SymbolKind as ObjKind, SymbolScope};
 
+    // ASLR anchor MUST match subsecond::aslr_reference()/apply_patch, which
+    // anchors on `main` — NOT on whisker's `whisker_aslr_anchor` (cache.aslr_reference).
+    // Mixing the two put a constant (main_off - anchor_off) into every stub target,
+    // landing stubs in the middle of functions (SIGTRAP on `brk` pads, and the
+    // material-prep SIGSEGVs that looked like data races). The jump table already
+    // used `main`; make the stubs agree.
+    let main_off = cache
+        .symbols
+        .by_name
+        .get("main")
+        .map(|s| s.address)
+        .unwrap_or(cache.aslr_reference);
     let aslr_offset = device_aslr
-        .checked_sub(cache.aslr_reference)
-        .context("device aslr below host anchor (stale app build?)")?;
-
-    // Classify every named symbol in the original binary: address + is_code.
-    let orig_bytes = std::fs::read(&cache.lib).with_context(|| format!("read {}", cache.lib.display()))?;
-    let orig = object::File::parse(orig_bytes.as_slice()).context("parse original for stub")?;
-    let mut orig_syms: std::collections::HashMap<String, (u64, bool)> = Default::default();
-    for sym in orig.symbols() {
-        let Ok(name) = sym.name() else { continue };
-        if name.is_empty() || sym.is_undefined() {
-            continue;
-        }
-        let is_text = sym.kind() == object::SymbolKind::Text;
-        orig_syms.insert(name.to_string(), (sym.address(), is_text));
-    }
+        .checked_sub(main_off)
+        .context("device aslr below host main anchor (stale app build?)")?;
 
     let needed = compute_needed_symbols(patch_obj).context("compute needed symbols")?;
     let mut obj = Object::new(BinaryFormat::Elf, Architecture::Aarch64, Endianness::Little);
@@ -294,12 +272,16 @@ fn build_stub_full(cache: &HotpatchModuleCache, patch_obj: &std::path::Path, dev
 
     let mut missing: Vec<&String> = Vec::new();
     for name in &needed {
-        let Some((addr, is_text)) = orig_syms.get(name) else {
+        let lookup = name.trim_start_matches("__imp_");
+        let Some(sym) = cache.symbols.by_name.get(lookup) else {
             missing.push(name);
             continue;
         };
-        let abs_addr = addr + aslr_offset;
-        if *is_text {
+        if sym.is_undefined || sym.address == 0 {
+            continue;
+        }
+        let abs_addr = sym.address + aslr_offset;
+        if matches!(sym.kind, ObjKind::Text) {
             let code = arm64_jump_stub(abs_addr);
             let off = obj.append_section_data(text, &code, 4);
             obj.add_symbol(Symbol {
@@ -313,6 +295,9 @@ fn build_stub_full(cache: &HotpatchModuleCache, patch_obj: &std::path::Path, dev
                 flags: SymbolFlags::None,
             });
         } else {
+            // Data/other: absolute-address definition at the host's RUNTIME
+            // address of the static (kept as weak so archives that already
+            // define the symbol win the link).
             obj.add_symbol(Symbol {
                 name: name.as_bytes().to_vec(),
                 value: abs_addr,
@@ -326,7 +311,7 @@ fn build_stub_full(cache: &HotpatchModuleCache, patch_obj: &std::path::Path, dev
         }
     }
     if !missing.is_empty() {
-        tracing::warn!(missing = ?missing, "stub: symbols absent from original binary");
+        tracing::warn!(missing = ?missing, "stub: symbols absent from cache table");
     }
     obj.write().map_err(|e| anyhow::anyhow!("stub object write: {e}"))
 }

@@ -297,3 +297,19 @@ makes the whole thing crash-free.
 `evidence_after_red.png` — cube RED ~23s after the live patch (R=215 G=46 B=32),
 app still running (phone demo). The same recipe then worked unmodified on a
 Meta Quest 3 running the OpenXR sample.
+
+## Why there's no name filter (and the one bug that made it look needed)
+
+The engine maps the **full** dx-style symbol table (`create_native_jump_table` — every
+name-overlap Text symbol, no allowlist). The earlier crashes that forced a temporary
+`--hot-funcs` allowlist were caused by a single bug: the **stub trampolines anchored ASLR
+on `whisker_aslr_anchor`, while subsecond's `apply_patch`/`aslr_reference()` anchor on
+`main`**. That constant offset error made every stub jump into the middle of a host
+function (SIGSEGV in bevy_pbr material prep, SIGTRAP on `brk` pads in `std::thread`).
+The fix: build stubs from the cache symbol table using the same `main` anchor (engine's
+`build_stub_full`). With correct stubs, the full unfiltered jump table is safe — no filter.
+
+Live validation (cargo-apk, phone, MTE on): `with_hot_patch` plain-system body change
+recolors the cube RED→GREEN→BLUE in flight; app stays up indefinitely (260+ 2s ticks,
+0 SIGSEGV, 0 SIGTRAP) with all 3759 symbols mapped.
+
